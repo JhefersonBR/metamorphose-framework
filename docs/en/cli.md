@@ -88,6 +88,46 @@ php bin/metamorphose serve --no-swagger
 
 **Note:** Press `Ctrl+C` to stop the server.
 
+### test
+
+Runs unit and feature tests using PHPUnit.
+
+**Usage:**
+```bash
+php bin/metamorphose test [options]
+```
+
+**Options:**
+- `--filter=FILTER` - Filter tests by name pattern
+- `--coverage` - Generate code coverage report
+- `-v` or `--verbose` - Verbose output
+- `--stop-on-failure` - Stop execution on first failure
+
+**Examples:**
+```bash
+# Run all tests
+php bin/metamorphose test
+
+# Run tests matching a filter
+php bin/metamorphose test --filter=RequestContext
+
+# Run with code coverage
+php bin/metamorphose test --coverage
+
+# Run with verbose output
+php bin/metamorphose test -v
+
+# Stop on first failure
+php bin/metamorphose test --stop-on-failure
+```
+
+**Alternative:**
+You can also use PHPUnit directly:
+```bash
+vendor/bin/phpunit
+composer test
+```
+
 ### migrate
 
 Runs database migrations for a specific scope.

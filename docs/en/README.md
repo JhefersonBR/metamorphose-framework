@@ -15,6 +15,7 @@ Metamorphose Framework is a modular, multi-tenant PHP application kernel based o
 9. [Permissions](permissions.md)
 10. [Microservices](microservices.md)
 11. [Swagger](swagger.md)
+12. [Testing](testing.md)
 
 ## Overview
 
@@ -74,4 +75,5 @@ Each section of the documentation covers a specific aspect of the framework:
 - **Logging**: Configuring and using the logging system
 - **Permissions**: Implementing permission checks
 - **Microservices**: Extracting modules to separate microservices
+- **Testing**: Writing and running unit and feature tests
 

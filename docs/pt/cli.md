@@ -88,6 +88,46 @@ php bin/metamorphose serve --no-swagger
 
 **Nota:** Pressione `Ctrl+C` para parar o servidor.
 
+### test
+
+Executa testes unitários e de funcionalidade usando PHPUnit.
+
+**Uso:**
+```bash
+php bin/metamorphose test [opções]
+```
+
+**Opções:**
+- `--filter=FILTRO` - Filtrar testes por padrão de nome
+- `--coverage` - Gerar relatório de cobertura de código
+- `-v` ou `--verbose` - Saída verbosa
+- `--stop-on-failure` - Parar execução no primeiro erro
+
+**Exemplos:**
+```bash
+# Executar todos os testes
+php bin/metamorphose test
+
+# Executar testes que correspondem a um filtro
+php bin/metamorphose test --filter=RequestContext
+
+# Executar com cobertura de código
+php bin/metamorphose test --coverage
+
+# Executar com saída verbosa
+php bin/metamorphose test -v
+
+# Parar no primeiro erro
+php bin/metamorphose test --stop-on-failure
+```
+
+**Alternativa:**
+Você também pode usar o PHPUnit diretamente:
+```bash
+vendor/bin/phpunit
+composer test
+```
+
 ### migrate
 
 Executa migrações de banco de dados para um escopo específico.
