@@ -6,9 +6,11 @@ use Metamorphose\Kernel\Context\TenantContext;
 use Metamorphose\Kernel\Context\UnitContext;
 use Metamorphose\Kernel\Database\DBALConnectionResolver;
 use Metamorphose\Kernel\Model\AbstractModel;
+use Metamorphose\Kernel\Database\Transaction;
 use Psr\Container\ContainerInterface;
 use Slim\App;
 use Slim\Factory\AppFactory;
+use Slim\Middleware\BodyParsingMiddleware;
 
 /**
  * Cria e configura a aplicação Slim
@@ -17,6 +19,9 @@ function createApp(ContainerInterface $container): App
 {
     AppFactory::setContainer($container);
     $app = AppFactory::create();
+    
+    // Adicionar middleware de body parsing para JSON
+    $app->addBodyParsingMiddleware();
     
     // Configurar AbstractModel
     if ($container->has(DBALConnectionResolver::class)) {

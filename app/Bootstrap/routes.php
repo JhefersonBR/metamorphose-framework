@@ -20,7 +20,6 @@ function loadRoutes(App $app, ContainerInterface $container): void
             'endpoints' => [
                 'swagger_ui' => '/swagger-ui',
                 'swagger_json' => '/swagger.json',
-                'example' => '/example',
             ],
         ], JSON_PRETTY_PRINT));
         return $response->withHeader('Content-Type', 'application/json');

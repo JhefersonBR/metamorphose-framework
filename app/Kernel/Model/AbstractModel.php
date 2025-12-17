@@ -8,6 +8,7 @@ use Metamorphose\Kernel\Context\UnitContext;
 use Metamorphose\Kernel\Database\DBALConnectionResolver;
 use Metamorphose\Kernel\Database\Query\QueryCriteria;
 use Metamorphose\Kernel\Database\Query\QueryFilter;
+use Metamorphose\Kernel\Database\Transaction;
 
 /**
  * Model abstrato estilo Adianti Framework
@@ -87,6 +88,7 @@ abstract class AbstractModel
      */
     private static function loadById(int $id): ?static
     {
+        self::ensureTransactionActive();
         $connection = self::getConnection();
         $table = static::$table;
         $primaryKey = static::$primaryKey;
@@ -110,6 +112,7 @@ abstract class AbstractModel
      */
     private static function loadByCriteria(QueryCriteria $criteria): array
     {
+        self::ensureTransactionActive();
         $connection = self::getConnection();
         $table = static::$table;
 
@@ -153,6 +156,7 @@ abstract class AbstractModel
      */
     public function store(): void
     {
+        self::ensureTransactionActive();
         $connection = self::getConnection();
         $table = static::$table;
         $primaryKey = static::$primaryKey;
@@ -189,6 +193,7 @@ abstract class AbstractModel
      */
     public function delete(?int $id = null): void
     {
+        self::ensureTransactionActive();
         $connection = self::getConnection();
         $table = static::$table;
         $primaryKey = static::$primaryKey;
@@ -269,8 +274,34 @@ abstract class AbstractModel
             throw new \RuntimeException('ConnectionResolver not set. Call AbstractModel::setConnectionResolver() in bootstrap.');
         }
 
+        // Se há transação ativa, usar a conexão da transação
+        if (Transaction::active(static::$scope)) {
+            $connection = Transaction::getConnection(static::$scope);
+            if ($connection !== null) {
+                return $connection;
+            }
+        }
+
         // Para models, não permitimos conexão padrão - precisa ter tenant/unit no contexto
         return self::$connectionResolver->connection(static::$scope, false);
+    }
+
+    /**
+     * Verifica se há transação ativa, caso contrário lança exceção
+     * 
+     * @throws \RuntimeException Se não houver transação ativa
+     */
+    protected static function ensureTransactionActive(): void
+    {
+        if (!Transaction::active(static::$scope)) {
+            throw new \RuntimeException(
+                sprintf(
+                    'No active transaction for scope "%s". You must open a transaction before performing database operations. Use Transaction::open("%s") or Transaction::run() to wrap your operations.',
+                    static::$scope,
+                    static::$scope
+                )
+            );
+        }
     }
 
     /**

@@ -2,6 +2,6 @@
 
 return [
     'enabled' => [
-        \Metamorphose\Modules\Example\Module::class,
+        // Adicione seus módulos aqui
     ],
 ];

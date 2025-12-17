@@ -21,7 +21,18 @@ class SwaggerUIController
 
     public function ui(ServerRequestInterface $request, ResponseInterface $response): ResponseInterface
     {
-        $swaggerJsonUrl = '/swagger.json';
+        $uri = $request->getUri();
+        $scheme = $uri->getScheme() ?: 'http';
+        $host = $uri->getHost() ?: 'localhost';
+        $port = $uri->getPort();
+        
+        // Construir URL base completa
+        $baseUrl = $scheme . '://' . $host;
+        if ($port !== null && $port !== 80 && $port !== 443) {
+            $baseUrl .= ':' . $port;
+        }
+        
+        $swaggerJsonUrl = $baseUrl . '/swagger.json';
         
         $html = <<<HTML
 <!DOCTYPE html>
@@ -51,6 +62,8 @@ class SwaggerUIController
     <script src="https://unpkg.com/swagger-ui-dist@5.10.3/swagger-ui-standalone-preset.js"></script>
     <script>
         window.onload = function() {
+            const baseUrl = "{$baseUrl}";
+            
             const ui = SwaggerUIBundle({
                 url: "{$swaggerJsonUrl}",
                 dom_id: '#swagger-ui',
@@ -62,7 +75,43 @@ class SwaggerUIController
                 plugins: [
                     SwaggerUIBundle.plugins.DownloadUrl
                 ],
-                layout: "StandaloneLayout"
+                layout: "StandaloneLayout",
+                requestInterceptor: function(request) {
+                    // Garantir que todas as requisições usem a URL completa com porta
+                    if (request.url) {
+                        // Se a URL é relativa (começa com /)
+                        if (request.url.startsWith('/')) {
+                            request.url = baseUrl + request.url;
+                        }
+                        // Se a URL contém http://localhost (com ou sem porta)
+                        else if (request.url.indexOf('http://localhost') === 0) {
+                            // Substituir http://localhost (com qualquer porta ou sem porta) pela URL base correta
+                            const urlMatch = request.url.match(/^http:\/\/localhost(?::\d+)?(\/.*)?$/);
+                            if (urlMatch) {
+                                const path = urlMatch[1] || '';
+                                request.url = baseUrl + path;
+                            }
+                        }
+                    }
+                    
+                    return request;
+                },
+                onComplete: function() {
+                    // Forçar atualização das URLs dos servidores após carregar
+                    if (ui && ui.specSelectors && ui.specSelectors.specJson) {
+                        const spec = ui.specSelectors.specJson();
+                        if (spec && spec.get && spec.get('servers')) {
+                            const servers = spec.get('servers').toJS();
+                            if (servers && servers.length > 0) {
+                                servers.forEach(function(server, index) {
+                                    if (server.url && server.url.includes('http://localhost')) {
+                                        servers[index].url = baseUrl;
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
             });
         };
     </script>
@@ -84,7 +133,28 @@ HTML;
         }
 
         $json = file_get_contents($this->swaggerJsonPath);
-        $response->getBody()->write($json);
+        $swaggerData = json_decode($json, true);
+        
+        // Atualizar URL do servidor baseado na requisição atual
+        if (isset($swaggerData['servers']) && is_array($swaggerData['servers'])) {
+            $uri = $request->getUri();
+            $scheme = $uri->getScheme() ?: 'http';
+            $host = $uri->getHost() ?: 'localhost';
+            $port = $uri->getPort();
+            
+            // Construir URL base
+            $baseUrl = $scheme . '://' . $host;
+            if ($port !== null && $port !== 80 && $port !== 443) {
+                $baseUrl .= ':' . $port;
+            }
+            
+            // Atualizar todas as URLs de servidor
+            foreach ($swaggerData['servers'] as &$server) {
+                $server['url'] = $baseUrl;
+            }
+        }
+        
+        $response->getBody()->write(json_encode($swaggerData, JSON_PRETTY_PRINT));
         return $response->withHeader('Content-Type', 'application/json');
     }
 }

@@ -11,6 +11,7 @@ use Metamorphose\Kernel\Context\UnitContext;
 use Metamorphose\Kernel\Database\ConnectionResolver;
 use Metamorphose\Kernel\Database\ConnectionResolverInterface;
 use Metamorphose\Kernel\Database\DBALConnectionResolver;
+use Metamorphose\Kernel\Database\Transaction;
 use Metamorphose\Kernel\Model\AbstractModel;
 use Metamorphose\Kernel\Log\LoggerFactory;
 use Metamorphose\Kernel\Log\LoggerInterface;
@@ -91,6 +92,11 @@ function buildContainer(): Container
         }),
     ]);
     
-    return $builder->build();
+    $container = $builder->build();
+    
+    // Configurar Transaction com o connection resolver
+    Transaction::setConnectionResolver($container->get(DBALConnectionResolver::class));
+    
+    return $container;
 }
 

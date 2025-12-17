@@ -204,25 +204,81 @@ $connection = $connectionResolver->resolveUnit();
 
 ## Using Models
 
-The framework uses a Model system inspired by Adianti Framework, with support for advanced search criteria:
+The framework uses a Model system inspired by Adianti Framework, with support for advanced search criteria.
+
+**Important**: All database operations (load, store, delete) require an active transaction. If you try to execute an operation without an open transaction, an exception will be thrown.
 
 ```php
 use Metamorphose\Modules\Product\Model\Product;
 use Metamorphose\Kernel\Database\Query\QueryCriteria;
 use Metamorphose\Kernel\Database\Query\QueryFilter;
+use Metamorphose\Kernel\Database\Transaction;
 
-// Find all products
-$products = Product::load(new QueryCriteria());
+// Find all products (with transaction)
+$products = Transaction::run(function () {
+    return Product::load(new QueryCriteria());
+}, 'tenant');
 
-// Find product by ID
-$product = Product::load(1);
+// Find product by ID (with transaction)
+$product = Transaction::run(function () {
+    return Product::load(1);
+}, 'tenant');
 
-// Find with filters
-$criteria = (new QueryCriteria())
-    ->add(new QueryFilter('price', '>', 100))
-    ->orderBy('created_at', 'DESC')
-    ->limit(10);
-$products = Product::load($criteria);
+// Find with filters (with transaction)
+$products = Transaction::run(function () {
+    $criteria = (new QueryCriteria())
+        ->add(new QueryFilter('price', '>', 100))
+        ->orderBy('created_at', 'DESC')
+        ->limit(10);
+    return Product::load($criteria);
+}, 'tenant');
+
+// Create product (with transaction)
+$product = Transaction::run(function () {
+    $product = new Product();
+    $product->fromArray([
+        'name' => 'Test Product',
+        'price' => 99.99,
+    ]);
+    $product->store();
+    return $product;
+}, 'tenant');
+
+// Update product (with transaction)
+Transaction::run(function () use ($id, $data) {
+    $product = Product::load($id);
+    if ($product) {
+        $product->set('name', $data['name']);
+        $product->store();
+    }
+}, 'tenant');
+
+// Delete product (with transaction)
+Transaction::run(function () use ($id) {
+    $product = Product::load($id);
+    if ($product) {
+        $product->delete();
+    }
+}, 'tenant');
+```
+
+### Alternative: Using open() and close()
+
+You can also use `Transaction::open()` and `Transaction::close()` manually:
+
+```php
+Transaction::open('tenant');
+
+try {
+    $product = Product::load(1);
+    $product->set('price', 149.99);
+    $product->store();
+    
+    Transaction::close('tenant');
+} catch (\Exception $e) {
+    Transaction::rollback('tenant');
+    throw $e;
+}
 ```
 
 ## Migrations
@@ -304,34 +360,193 @@ CREATE TABLE migrations (
 
 Only pending migrations are executed.
 
-## Transactions
+## Transaction - Transaction Management
 
-Use PDO transactions for data integrity:
+The `Transaction` class provides transaction management similar to TTransaction from Adianti Framework. The transaction only commits when it is closed (`close()`), and supports nested transactions.
+
+### Features
+
+- **Automatic commit**: Commit only happens when `close()` is called
+- **Nested transactions**: Supports multiple transactions of the same scope
+- **Automatic rollback**: On exception or commit error
+- **Multiple scopes**: Supports `core`, `tenant`, and `unit`
+
+### Available Methods
+
+#### open() - Open Transaction
 
 ```php
-public function createWithDetails(array $product, array $details): void
-{
-    $connection = $this->connectionResolver->resolveCore();
+use Metamorphose\Kernel\Database\Transaction;
+
+// Open a transaction for tenant scope
+Transaction::open('tenant');
+
+// Operations within the transaction
+$product1 = new Product();
+$product1->fromArray(['name' => 'Product 1', 'price' => 99.99]);
+$product1->store();
+
+$product2 = new Product();
+$product2->fromArray(['name' => 'Product 2', 'price' => 149.99]);
+$product2->store();
+
+// Commit happens automatically here
+Transaction::close('tenant');
+```
+
+#### close() - Close Transaction (Automatic Commit)
+
+```php
+Transaction::open('tenant');
+// ... operations ...
+Transaction::close('tenant'); // Automatic commit
+```
+
+**Important**: If there is no active transaction, `close()` throws an exception.
+
+#### rollback() - Rollback Transaction
+
+```php
+Transaction::open('tenant');
+
+try {
+    // ... operations ...
+    Transaction::close('tenant');
+} catch (\Exception $e) {
+    // Manual rollback on error
+    Transaction::rollback('tenant');
+    throw $e;
+}
+```
+
+**Important**: If there is no active transaction, `rollback()` throws an exception.
+
+#### active() - Check if Transaction is Active
+
+```php
+if (Transaction::active('tenant')) {
+    // There is an active transaction for tenant scope
+}
+```
+
+#### getConnection() - Get Transaction Connection
+
+```php
+$connection = Transaction::getConnection('tenant');
+if ($connection !== null) {
+    // Use the active transaction connection
+}
+```
+
+#### run() - Execute Callback in Transaction (Recommended)
+
+The `run()` method is the safest way to use transactions, as it guarantees automatic commit or rollback:
+
+```php
+use Metamorphose\Kernel\Database\Transaction;
+use Metamorphose\Modules\Example\Model\Product;
+
+$products = Transaction::run(function ($connection) {
+    $createdProducts = [];
     
-    $connection->beginTransaction();
-    
-    try {
-        // Insert product
-        $stmt = $connection->prepare("INSERT INTO products (name, price) VALUES (?, ?)");
-        $stmt->execute([$product['name'], $product['price']]);
-        $productId = $connection->lastInsertId();
-        
-        // Insert details
-        $stmt = $connection->prepare("INSERT INTO product_details (product_id, detail) VALUES (?, ?)");
-        foreach ($details as $detail) {
-            $stmt->execute([$productId, $detail]);
-        }
-        
-        $connection->commit();
-    } catch (\Exception $e) {
-        $connection->rollBack();
-        throw $e;
+    // Create multiple products
+    foreach ($items as $item) {
+        $product = new Product();
+        $product->fromArray([
+            'name' => $item['name'],
+            'price' => $item['price'],
+        ]);
+        $product->store();
+        $createdProducts[] = $product->toArray();
     }
+    
+    return $createdProducts;
+}, 'tenant');
+
+// If any operation fails, everything is automatically rolled back
+```
+
+### Nested Transactions
+
+The class supports nested transactions of the same scope:
+
+```php
+Transaction::open('tenant'); // Level 1
+// ... operations ...
+
+Transaction::open('tenant'); // Level 2 (nested)
+// ... more operations ...
+Transaction::close('tenant'); // Decrement to level 1
+
+// ... more operations ...
+Transaction::close('tenant'); // Real commit here (level 0)
+```
+
+### Complete Example
+
+```php
+use Metamorphose\Kernel\Database\Transaction;
+use Metamorphose\Modules\Example\Model\Product;
+
+class OrderService
+{
+    public function createOrder(array $orderData, array $items): void
+    {
+        Transaction::run(function ($connection) use ($orderData, $items) {
+            // Create order
+            $order = new Order();
+            $order->fromArray([
+                'customer_id' => $orderData['customer_id'],
+                'total' => $orderData['total'],
+                'created_at' => date('Y-m-d H:i:s'),
+            ]);
+            $order->store();
+            $orderId = $order->get('id');
+
+            // Create order items
+            foreach ($items as $item) {
+                $orderItem = new OrderItem();
+                $orderItem->fromArray([
+                    'order_id' => $orderId,
+                    'product_id' => $item['product_id'],
+                    'quantity' => $item['quantity'],
+                    'price' => $item['price'],
+                ]);
+                $orderItem->store();
+
+                // Update stock using direct connection
+                $connection->executeStatement(
+                    "UPDATE products SET stock = stock - :quantity WHERE id = :id",
+                    ['quantity' => $item['quantity'], 'id' => $item['product_id']]
+                );
+            }
+
+            return $orderId;
+        }, 'tenant');
+    }
+}
+```
+
+### Error Handling
+
+```php
+try {
+    Transaction::open('tenant');
+    
+    // Operations that may fail
+    $product->store();
+    $inventory->update();
+    
+    Transaction::close('tenant');
+} catch (\RuntimeException $e) {
+    // Error closing without opening
+    // or commit error
+    Transaction::rollback('tenant');
+    throw $e;
+} catch (\Exception $e) {
+    // Other errors
+    Transaction::rollback('tenant');
+    throw $e;
 }
 ```
 
