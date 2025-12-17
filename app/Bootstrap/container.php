@@ -10,6 +10,8 @@ use Metamorphose\Kernel\Context\TenantContext;
 use Metamorphose\Kernel\Context\UnitContext;
 use Metamorphose\Kernel\Database\ConnectionResolver;
 use Metamorphose\Kernel\Database\ConnectionResolverInterface;
+use Metamorphose\Kernel\Database\DBALConnectionResolver;
+use Metamorphose\Kernel\Model\AbstractModel;
 use Metamorphose\Kernel\Log\LoggerFactory;
 use Metamorphose\Kernel\Log\LoggerInterface;
 use Metamorphose\Kernel\Log\LogContext;
@@ -46,6 +48,14 @@ function buildContainer(): Container
         
         ConnectionResolverInterface::class => \DI\factory(function (Container $c) {
             return new ConnectionResolver(
+                $c->get('config.database'),
+                $c->get(TenantContext::class),
+                $c->get(UnitContext::class)
+            );
+        }),
+        
+        DBALConnectionResolver::class => \DI\factory(function (Container $c) {
+            return new DBALConnectionResolver(
                 $c->get('config.database'),
                 $c->get(TenantContext::class),
                 $c->get(UnitContext::class)

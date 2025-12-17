@@ -6,9 +6,24 @@ This guide will help you install and configure the Metamorphose Framework.
 
 - PHP >= 8.1
 - Composer
-- MySQL/MariaDB 5.7+ (or compatible database)
+- Database (one of the following):
+  - **SQLite** (included in PHP, ideal for development)
+  - **MySQL 5.7+** or **MariaDB 10.2+** (requires PDO MySQL extension)
+  - **PostgreSQL 9.5+** (requires PDO PostgreSQL extension)
+  - **SQL Server 2012+** (requires PDO SQL Server extension)
+  - **Oracle 11g+** (requires OCI8 extension)
 - Web server (Apache, Nginx, or PHP built-in server)
 - Optional: Swoole or FrankenPHP for persistent runtimes
+
+### Required PHP Extensions
+
+To use specific databases, you need the corresponding PDO extensions:
+
+- **SQLite**: `pdo_sqlite` (usually included)
+- **MySQL/MariaDB**: `pdo_mysql`
+- **PostgreSQL**: `pdo_pgsql`
+- **SQL Server**: `pdo_sqlsrv` (requires Microsoft ODBC Driver)
+- **Oracle**: `oci8` or `pdo_oci`
 
 ## Step 1: Install Dependencies
 
@@ -20,7 +35,7 @@ This will install all required dependencies including:
 - Slim Framework
 - PHP-DI (Dependency Injection Container)
 - Monolog (Logging)
-- FluentPDO (Database abstraction)
+- Doctrine DBAL (Database abstraction)
 
 ## Step 2: Configure Environment
 

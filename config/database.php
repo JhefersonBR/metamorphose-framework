@@ -12,10 +12,10 @@ return [
         'collation' => 'utf8mb4_unicode_ci',
     ],
     'tenant' => [
-        'driver' => getenv('DB_TENANT_DRIVER') ?: 'mysql',
+        'driver' => getenv('DB_TENANT_DRIVER') ?: 'sqlite',
         'host' => getenv('DB_TENANT_HOST') ?: 'localhost',
         'port' => getenv('DB_TENANT_PORT') ?: 3306,
-        'database' => getenv('DB_TENANT_DATABASE') ?: 'metamorphose_tenant',
+        'database' => getenv('DB_TENANT_DATABASE') ?: __DIR__ . '/../storage/tenant_database.sqlite',
         'username' => getenv('DB_TENANT_USERNAME') ?: 'root',
         'password' => getenv('DB_TENANT_PASSWORD') ?: '',
         'charset' => 'utf8mb4',

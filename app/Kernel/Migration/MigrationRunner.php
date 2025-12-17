@@ -2,11 +2,11 @@
 
 namespace Metamorphose\Kernel\Migration;
 
-use Metamorphose\Kernel\Database\ConnectionResolverInterface;
-use PDO;
+use Doctrine\DBAL\Connection;
+use Metamorphose\Kernel\Database\DBALConnectionResolver;
 
 /**
- * Executor de migrações
+ * Executor de migrações usando Doctrine DBAL
  * 
  * Executa migrações de banco de dados para os escopos:
  * - core (global)
@@ -15,11 +15,11 @@ use PDO;
  */
 class MigrationRunner
 {
-    private ConnectionResolverInterface $connectionResolver;
+    private DBALConnectionResolver $connectionResolver;
     private array $migrationPaths;
 
     public function __construct(
-        ConnectionResolverInterface $connectionResolver,
+        DBALConnectionResolver $connectionResolver,
         array $migrationPaths
     ) {
         $this->connectionResolver = $connectionResolver;
@@ -68,36 +68,46 @@ class MigrationRunner
         }
     }
 
-    private function getConnectionForScope(string $scope): PDO
+    private function getConnectionForScope(string $scope): Connection
     {
+        // Para migrations, permitimos conexão padrão sem tenant/unit ID
         return match ($scope) {
             'core' => $this->connectionResolver->resolveCore(),
-            'tenant' => $this->connectionResolver->resolveTenant(),
-            'unit' => $this->connectionResolver->resolveUnit(),
+            'tenant' => $this->connectionResolver->resolveTenant(null, true),
+            'unit' => $this->connectionResolver->resolveUnit(null, true),
             default => throw new \InvalidArgumentException("Escopo inválido: {$scope}"),
         };
     }
 
-    private function ensureMigrationsTable(PDO $connection): void
+    private function ensureMigrationsTable(Connection $connection): void
     {
-        // Detectar se é SQLite pelo driver
-        $driver = $connection->getAttribute(PDO::ATTR_DRIVER_NAME);
+        $schemaManager = $connection->createSchemaManager();
         
-        if ($driver === 'sqlite') {
-            $sql = "CREATE TABLE IF NOT EXISTS migrations (
+        // Verificar se a tabela já existe
+        if ($schemaManager->tablesExist(['migrations'])) {
+            return;
+        }
+        
+        // Detectar se é SQLite pela plataforma
+        $platform = $connection->getDatabasePlatform();
+        $platformClass = get_class($platform);
+        $isSqlite = strpos($platformClass, 'SQLite') !== false;
+        
+        if ($isSqlite) {
+            $sql = "CREATE TABLE migrations (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 migration VARCHAR(255) NOT NULL UNIQUE,
                 executed_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )";
         } else {
-            $sql = "CREATE TABLE IF NOT EXISTS migrations (
+            $sql = "CREATE TABLE migrations (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 migration VARCHAR(255) NOT NULL UNIQUE,
                 executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
         }
         
-        $connection->exec($sql);
+        $connection->executeStatement($sql);
     }
 
     private function getMigrations(string $path): array
@@ -118,13 +128,13 @@ class MigrationRunner
         return $migrations;
     }
 
-    private function getExecutedMigrations(PDO $connection): array
+    private function getExecutedMigrations(Connection $connection): array
     {
-        $stmt = $connection->query("SELECT migration FROM migrations ORDER BY migration");
-        return $stmt->fetchAll(PDO::FETCH_COLUMN);
+        $results = $connection->fetchFirstColumn("SELECT migration FROM migrations ORDER BY migration");
+        return $results;
     }
 
-    private function executeMigration(PDO $connection, array $migration): void
+    private function executeMigration(Connection $connection, array $migration): void
     {
         $connection->beginTransaction();
         
@@ -145,8 +155,7 @@ class MigrationRunner
             
             $instance->up();
             
-            $stmt = $connection->prepare("INSERT INTO migrations (migration) VALUES (?)");
-            $stmt->execute([$migration['name']]);
+            $connection->insert('migrations', ['migration' => $migration['name']]);
             
             $connection->commit();
         } catch (\Exception $e) {

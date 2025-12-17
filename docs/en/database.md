@@ -24,19 +24,104 @@ The framework supports three database connection scopes:
 - Used for unit-specific data
 - Example: Unit inventory, local settings
 
+## Supported Databases
+
+The framework supports the following databases through Doctrine DBAL:
+
+- **SQLite** - Embedded database, ideal for development and testing
+- **MySQL / MariaDB** - Popular relational databases
+- **PostgreSQL** - Advanced open-source relational database
+- **SQL Server** - Microsoft database
+- **Oracle** - Oracle enterprise database
+
 ## Configuration
 
 Database connections are configured in `config/database.php`:
+
+### SQLite
+
+```php
+'core' => [
+    'driver' => 'sqlite',
+    'database' => __DIR__ . '/../storage/database.sqlite',
+    'username' => '',
+    'password' => '',
+    'charset' => 'utf8',
+],
+```
+
+### MySQL / MariaDB
+
+```php
+'core' => [
+    'driver' => 'mysql', // or 'mariadb'
+    'host' => getenv('DB_CORE_HOST') ?: 'localhost',
+    'port' => getenv('DB_CORE_PORT') ?: 3306,
+    'database' => getenv('DB_CORE_DATABASE') ?: 'metamorphose_core',
+    'username' => getenv('DB_CORE_USERNAME') ?: 'root',
+    'password' => getenv('DB_CORE_PASSWORD') ?: '',
+    'charset' => 'utf8mb4',
+    'collation' => 'utf8mb4_unicode_ci',
+],
+```
+
+### PostgreSQL
+
+```php
+'core' => [
+    'driver' => 'pgsql', // or 'postgresql', 'postgres'
+    'host' => getenv('DB_CORE_HOST') ?: 'localhost',
+    'port' => getenv('DB_CORE_PORT') ?: 5432,
+    'database' => getenv('DB_CORE_DATABASE') ?: 'metamorphose_core',
+    'username' => getenv('DB_CORE_USERNAME') ?: 'postgres',
+    'password' => getenv('DB_CORE_PASSWORD') ?: '',
+    'charset' => 'UTF8',
+],
+```
+
+### SQL Server
+
+```php
+'core' => [
+    'driver' => 'sqlsrv', // or 'mssql', 'sqlserver'
+    'host' => getenv('DB_CORE_HOST') ?: 'localhost',
+    'port' => getenv('DB_CORE_PORT') ?: 1433,
+    'database' => getenv('DB_CORE_DATABASE') ?: 'metamorphose_core',
+    'username' => getenv('DB_CORE_USERNAME') ?: 'sa',
+    'password' => getenv('DB_CORE_PASSWORD') ?: '',
+    'charset' => 'UTF-8',
+],
+```
+
+### Oracle
+
+```php
+'core' => [
+    'driver' => 'oracle', // or 'oci'
+    'host' => getenv('DB_CORE_HOST') ?: 'localhost',
+    'port' => getenv('DB_CORE_PORT') ?: 1521,
+    'database' => getenv('DB_CORE_DATABASE') ?: 'XE', // SID or Service Name
+    'username' => getenv('DB_CORE_USERNAME') ?: 'system',
+    'password' => getenv('DB_CORE_PASSWORD') ?: '',
+    'charset' => 'AL32UTF8',
+],
+```
+
+**Note for Oracle:**
+- To use SID: `'database' => 'XE'`
+- To use Service Name: `'database' => '/service_name'`
+
+### Complete Example
 
 ```php
 <?php
 
 return [
     'core' => [
-        'driver' => 'mysql',
+        'driver' => getenv('DB_CORE_DRIVER') ?: 'sqlite',
         'host' => getenv('DB_CORE_HOST') ?: 'localhost',
         'port' => getenv('DB_CORE_PORT') ?: 3306,
-        'database' => getenv('DB_CORE_DATABASE') ?: 'metamorphose_core',
+        'database' => getenv('DB_CORE_DATABASE') ?: __DIR__ . '/../storage/database.sqlite',
         'username' => getenv('DB_CORE_USERNAME') ?: 'root',
         'password' => getenv('DB_CORE_PASSWORD') ?: '',
         'charset' => 'utf8mb4',
@@ -117,36 +202,27 @@ $connection = $connectionResolver->resolveTenant();
 $connection = $connectionResolver->resolveUnit();
 ```
 
-## Using FluentPDO
+## Using Models
 
-The framework supports FluentPDO for a more fluent query interface:
+The framework uses a Model system inspired by Adianti Framework, with support for advanced search criteria:
 
 ```php
-use Envms\FluentPDO\Query;
+use Metamorphose\Modules\Product\Model\Product;
+use Metamorphose\Kernel\Database\Query\QueryCriteria;
+use Metamorphose\Kernel\Database\Query\QueryFilter;
 
-class ProductRepository
-{
-    private ConnectionResolverInterface $connectionResolver;
+// Find all products
+$products = Product::load(new QueryCriteria());
 
-    public function findAll(): array
-    {
-        $pdo = $this->connectionResolver->resolveCore();
-        $query = new Query($pdo);
-        
-        return $query->from('products')
-            ->fetchAll();
-    }
+// Find product by ID
+$product = Product::load(1);
 
-    public function findById(int $id): ?array
-    {
-        $pdo = $this->connectionResolver->resolveCore();
-        $query = new Query($pdo);
-        
-        return $query->from('products')
-            ->where('id', $id)
-            ->fetch();
-    }
-}
+// Find with filters
+$criteria = (new QueryCriteria())
+    ->add(new QueryFilter('price', '>', 100))
+    ->orderBy('created_at', 'DESC')
+    ->limit(10);
+$products = Product::load($criteria);
 ```
 
 ## Migrations
@@ -322,18 +398,20 @@ public function findAllForContext(): array
 }
 ```
 
-### Pattern 3: Using FluentPDO
+### Pattern 3: Using Models with QueryCriteria
 
 ```php
+use Metamorphose\Modules\Product\Model\Product;
+use Metamorphose\Kernel\Database\Query\QueryCriteria;
+use Metamorphose\Kernel\Database\Query\QueryFilter;
+
 public function search(string $query): array
 {
-    $pdo = $this->connectionResolver->resolveCore();
-    $fluent = new Query($pdo);
+    $criteria = (new QueryCriteria())
+        ->add(new QueryFilter('name', 'LIKE', "%{$query}%"))
+        ->orderBy('name');
     
-    return $fluent->from('products')
-        ->where('name LIKE ?', "%{$query}%")
-        ->orderBy('name')
-        ->fetchAll();
+    return Product::load($criteria);
 }
 ```
 

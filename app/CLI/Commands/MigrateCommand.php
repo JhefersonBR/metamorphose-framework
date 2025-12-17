@@ -3,8 +3,7 @@
 namespace Metamorphose\CLI\Commands;
 
 use Metamorphose\CLI\CommandInterface;
-use Metamorphose\Kernel\Database\ConnectionResolver;
-use Metamorphose\Kernel\Database\ConnectionResolverInterface;
+use Metamorphose\Kernel\Database\DBALConnectionResolver;
 use Metamorphose\Kernel\Context\TenantContext;
 use Metamorphose\Kernel\Context\UnitContext;
 use Metamorphose\Kernel\Migration\MigrationRunner;
@@ -71,7 +70,7 @@ class MigrateCommand implements CommandInterface
         $tenantContext = new TenantContext();
         $unitContext = new UnitContext();
         
-        $connectionResolver = new ConnectionResolver($config, $tenantContext, $unitContext);
+        $connectionResolver = new DBALConnectionResolver($config, $tenantContext, $unitContext);
         
         $migrationPaths = $this->getMigrationPaths($scope);
         
