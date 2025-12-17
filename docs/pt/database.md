@@ -200,7 +200,7 @@ $connection = $connectionResolver->connection('tenant');
 
 ## Usando Models
 
-O framework utiliza um sistema de Models inspirado no Adianti Framework, com suporte a critérios avançados de pesquisa.
+O framework utiliza um sistema de Models com suporte a critérios avançados de pesquisa.
 
 **Importante**: Todas as operações de banco de dados (load, store, delete) exigem uma transação ativa. Se você tentar executar uma operação sem uma transação aberta, uma exceção será lançada.
 
@@ -379,7 +379,7 @@ Apenas migrações pendentes são executadas.
 
 ## AbstractModel
 
-O framework fornece um sistema de Models inspirado no Adianti Framework, usando Doctrine DBAL (sem ORM).
+O framework fornece um sistema de Models usando Doctrine DBAL (sem ORM).
 
 ### Criando um Model
 
@@ -535,7 +535,7 @@ $criteria = (new QueryCriteria())
 
 ## Transaction - Gerenciamento de Transações
 
-A classe `Transaction` fornece um gerenciamento de transações similar ao TTransaction do Adianti Framework. A transação só faz commit quando é fechada (`close()`), e suporta transações aninhadas.
+A classe `Transaction` fornece um gerenciamento de transações onde a transação só faz commit quando é fechada (`close()`), e suporta transações aninhadas.
 
 ### Características
 

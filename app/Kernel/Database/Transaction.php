@@ -7,7 +7,6 @@ use Doctrine\DBAL\Connection;
 /**
  * Gerenciador de transações de banco de dados
  * 
- * Similar ao TTransaction do Adianti Framework.
  * A transação só faz commit quando é fechada (close()).
  * Suporta transações aninhadas.
  */

@@ -204,7 +204,7 @@ $connection = $connectionResolver->resolveUnit();
 
 ## Using Models
 
-The framework uses a Model system inspired by Adianti Framework, with support for advanced search criteria.
+The framework uses a Model system with support for advanced search criteria.
 
 **Important**: All database operations (load, store, delete) require an active transaction. If you try to execute an operation without an open transaction, an exception will be thrown.
 
@@ -362,7 +362,7 @@ Only pending migrations are executed.
 
 ## Transaction - Transaction Management
 
-The `Transaction` class provides transaction management similar to TTransaction from Adianti Framework. The transaction only commits when it is closed (`close()`), and supports nested transactions.
+The `Transaction` class provides transaction management where the transaction only commits when it is closed (`close()`), and supports nested transactions.
 
 ### Features
 

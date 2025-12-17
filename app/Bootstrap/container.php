@@ -13,6 +13,7 @@ use Metamorphose\Kernel\Database\ConnectionResolverInterface;
 use Metamorphose\Kernel\Database\DBALConnectionResolver;
 use Metamorphose\Kernel\Database\Transaction;
 use Metamorphose\Kernel\Model\AbstractModel;
+use Metamorphose\Kernel\Module\ModuleRunner;
 use Metamorphose\Kernel\Log\LoggerFactory;
 use Metamorphose\Kernel\Log\LoggerInterface;
 use Metamorphose\Kernel\Log\LogContext;
@@ -90,6 +91,8 @@ function buildContainer(): Container
                 $c->get(UnitContext::class)
             );
         }),
+        
+        ModuleRunner::class => \DI\create(ModuleRunner::class),
     ]);
     
     $container = $builder->build();

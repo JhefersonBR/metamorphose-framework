@@ -1,4 +1,4 @@
-# Microservices and Remote Modules
+# Microservices and Remote Module Execution
 
 Metamorphose Framework is designed to support both monolithic and microservices architectures. You can easily extract modules into separate microservices without changing the module code itself.
 
@@ -9,6 +9,7 @@ The framework allows you to:
 - Extract specific modules to run as separate microservices
 - Mix local and remote modules transparently
 - Migrate modules gradually from monolith to microservices
+- **Switch between local and remote by configuration only, without changing code**
 
 ## Architecture
 
@@ -37,44 +38,93 @@ Modules can run as separate services:
 │     Main Application            │
 │  ┌──────────┐  ┌──────────┐   │
 │  │ Module A  │  │ Module B │   │
+│  │ (Local)   │  │ (Local)   │   │
 │  └──────────┘  └──────────┘   │
 │         │              │        │
 │         ▼              ▼        │
 │  ┌──────────┐  ┌──────────┐   │
-│  │ Product   │  │ Order    │   │
+│  │ Permission│  │ Stock    │   │
 │  │ Service   │  │ Service  │   │
 │  │ (Remote)  │  │ (Remote) │   │
 │  └──────────┘  └──────────┘   │
 └─────────────────────────────────┘
 ```
 
+## Module Execution System
+
+The framework uses a **module executor system** that allows executing module actions locally or remotely in a transparent way.
+
+### Components
+
+#### ModuleExecutorInterface
+
+Generic interface that defines the contract for module execution:
+
+```php
+interface ModuleExecutorInterface
+{
+    public function execute(string $moduleName, string $action, array $payload = []): mixed;
+}
+```
+
+#### LocalModuleExecutor
+
+Executes modules directly in the same process (monolithic):
+
+- Resolves module via ModuleLoader
+- Calls method directly
+- Injects contexts if needed
+- Executes in the same process
+
+#### RemoteModuleExecutor
+
+Executes modules configured as remote via HTTP:
+
+- Sends HTTP request to microservice
+- Preserves context (tenant, unit, request, user)
+- Returns result as if it were local execution
+- Handles network errors and invalid responses
+
+#### ModuleRunner
+
+Facade that automatically decides which executor to use:
+
+- Reads module configuration
+- Checks if module is `local` or `remote`
+- Delegates to appropriate executor
+- **No module needs to know if it's local or remote**
+
 ## Configuration
 
-### Step 1: Configure Remote Modules
+### Step 1: Configure Modules
 
-Edit `config/modules.php` to define remote modules:
+Edit `config/modules.php` to define local and remote modules:
 
 ```php
 <?php
 
 return [
     'enabled' => [
-        // Local modules (run in monolith)
-        \Metamorphose\Modules\Example\Module::class,
+        // Format 1: Local module (class only)
         \Metamorphose\Modules\Auth\Module::class,
         
-        // Remote modules (microservices)
+        // Format 2: Local module (with explicit configuration)
         [
-            'type' => 'remote',
-            'name' => 'ProductCatalog',
-            'base_url' => getenv('PRODUCT_SERVICE_URL') ?: 'http://product-service:8000',
-            'routes_prefix' => '/products', // Optional route prefix
+            'class' => \Metamorphose\Modules\Stock\Module::class,
+            'name' => 'stock', // optional
+            'mode' => 'local', // default: 'local'
         ],
+        
+        // Format 3: Remote module (microservice)
         [
-            'type' => 'remote',
-            'name' => 'OrderManagement',
-            'base_url' => getenv('ORDER_SERVICE_URL') ?: 'http://order-service:8000',
-            'routes_prefix' => '/orders',
+            'class' => \Metamorphose\Modules\Permission\Module::class,
+            'name' => 'permission',
+            'mode' => 'remote',
+            'endpoint' => getenv('PERMISSION_SERVICE_URL') ?: 'http://permission-service:8000',
+            'timeout' => 30, // optional, default: 30 seconds
+            'headers' => [ // optional, custom headers
+                'X-API-Key' => getenv('PERMISSION_API_KEY'),
+            ],
         ],
     ],
 ];
@@ -82,19 +132,102 @@ return [
 
 ### Step 2: Environment Variables
 
-Set environment variables for microservice URLs:
+Configure environment variables for microservice URLs:
 
 ```bash
 # .env or environment configuration
-PRODUCT_SERVICE_URL=http://product-service:8000
-ORDER_SERVICE_URL=http://order-service:8000
+PERMISSION_SERVICE_URL=http://permission-service:8000
+PERMISSION_API_KEY=your-api-key-here
+```
+
+## Using ModuleRunner
+
+### Executing Module Actions
+
+To execute a module action, use `ModuleRunner`:
+
+```php
+use Metamorphose\Kernel\Module\ModuleRunner;
+
+// In your controller or service
+$moduleRunner = $container->get(ModuleRunner::class);
+
+// Execute action locally or remotely (transparent)
+$result = $moduleRunner->execute('permission', 'checkPermission', [
+    'user_id' => 123,
+    'permission' => 'user.create',
+]);
+
+// The same code works if the module is local or remote!
+```
+
+### Example: Permission Module
+
+**Permission Module (local or remote):**
+
+```php
+<?php
+
+namespace Metamorphose\Modules\Permission;
+
+class Module implements ModuleInterface
+{
+    public function register(ContainerInterface $container): void
+    {
+        // Register services
+    }
+
+    public function boot(): void
+    {
+        // Initializations
+    }
+
+    public function routes(App $app): void
+    {
+        // Module routes
+    }
+
+    /**
+     * Action that can be executed locally or remotely
+     */
+    public function checkPermission(array $payload): bool
+    {
+        $userId = $payload['user_id'];
+        $permission = $payload['permission'];
+        
+        // Permission check logic
+        // ...
+        
+        return true; // or false
+    }
+}
+```
+
+**Using the module (without knowing if it's local or remote):**
+
+```php
+// In any controller or service
+$moduleRunner = $container->get(ModuleRunner::class);
+
+$hasPermission = $moduleRunner->execute('permission', 'checkPermission', [
+    'user_id' => $currentUser->getId(),
+    'permission' => 'product.create',
+]);
+
+if (!$hasPermission) {
+    throw new \RuntimeException('Permission denied');
+}
 ```
 
 ## Creating a Microservice
 
 ### Step 1: Create Microservice Entry Point
 
-Create `public/product-service.php` (or deploy to separate server):
+The framework already provides the `/module/execute` endpoint that allows executing modules remotely. To create a dedicated microservice, you can:
+
+**Option A: Use the same code base (recommended)**
+
+Create `public/permission-service.php`:
 
 ```php
 <?php
@@ -107,14 +240,37 @@ $container = Bootstrap\buildContainer();
 $app = Bootstrap\createApp($container);
 
 Bootstrap\registerMiddlewares($app, $container);
+Bootstrap\loadRoutes($app, $container);
 
-// Load ONLY the ProductCatalog module
-$loader = new \Metamorphose\Kernel\Module\ModuleLoader(
-    $container,
-    $app,
-    [\Metamorphose\Modules\ProductCatalog\Module::class]
-);
+// The /module/execute endpoint is already available via loadRoutes()
+// It will execute only the modules enabled in this service
+
+$app->run();
+```
+
+**Option B: Custom entry point**
+
+If you need a specific entry point, you can create:
+
+```php
+<?php
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Metamorphose\Bootstrap;
+use Metamorphose\Kernel\Module\ModuleLoader;
+
+$container = Bootstrap\buildContainer();
+$app = Bootstrap\createApp($container);
+
+Bootstrap\registerMiddlewares($app, $container);
+
+// Load ONLY the Permission module
+$moduleClasses = $container->get('config.modules')['enabled'] ?? [];
+$loader = new ModuleLoader($container, $app, $moduleClasses);
 $loader->load();
+
+// The /module/execute endpoint is already available via Bootstrap\loadRoutes()
 
 $app->run();
 ```
@@ -129,127 +285,282 @@ Create `config/modules.php` in the microservice:
 return [
     'enabled' => [
         // Only this module runs in this microservice
-        \Metamorphose\Modules\ProductCatalog\Module::class,
+        \Metamorphose\Modules\Permission\Module::class,
     ],
 ];
 ```
 
 ### Step 3: Deploy Microservice
 
-The microservice structure:
+Microservice structure:
 
 ```
-product-service/
+permission-service/
 ├── app/
 │   └── Modules/
-│       └── ProductCatalog/  # Only this module
+│       └── Permission/  # Only this module
 ├── config/
 │   ├── app.php
 │   ├── database.php
 │   ├── log.php
-│   └── modules.php          # Only ProductCatalog enabled
+│   └── modules.php      # Only Permission enabled
 ├── public/
-│   └── index.php             # Microservice entry point
+│   └── index.php         # Microservice entry point
 └── vendor/
 ```
 
 ## How It Works
 
-### Request Flow
+### Local Execution Flow
 
-1. **Request arrives** at main application
-2. **Route matches** remote module prefix (e.g., `/products/*`)
-3. **Proxy middleware** forwards request to microservice
-4. **Context headers** (`X-Tenant-ID`, `X-Unit-ID`) are preserved
-5. **Response** is returned to client
+1. **Code calls** `ModuleRunner::execute('permission', 'checkPermission', $payload)`
+2. **ModuleRunner checks** configuration: module is `local`
+3. **LocalModuleExecutor** resolves module via ModuleLoader
+4. **Calls method directly**: `$module->checkPermission($payload)`
+5. **Returns result** directly
+
+### Remote Execution Flow
+
+1. **Code calls** `ModuleRunner::execute('permission', 'checkPermission', $payload)`
+2. **ModuleRunner checks** configuration: module is `remote`
+3. **RemoteModuleExecutor** builds standardized payload:
+   ```json
+   {
+     "module": "permission",
+     "action": "checkPermission",
+     "context": {
+       "tenant_id": "123",
+       "unit_id": "456",
+       "request_id": "abc...",
+       "user_id": "789"
+     },
+     "payload": {
+       "user_id": 123,
+       "permission": "product.create"
+     }
+   }
+   ```
+4. **Sends HTTP POST request** to `{endpoint}/module/execute`
+5. **Microservice receives** request at `/module/execute`
+6. **ModuleExecuteController** applies context and executes action locally
+7. **Returns response**:
+   ```json
+   {
+     "success": true,
+     "data": true
+   }
+   ```
+8. **RemoteModuleExecutor** decodes and returns result
+9. **Code receives** result as if it were local execution
 
 ### Context Preservation
 
-All context information is automatically forwarded:
+All context information is automatically preserved:
 
-- `X-Tenant-ID`: Tenant identifier
-- `X-Unit-ID`: Unit identifier
-- `X-Tenant-Code`: Tenant code
-- `X-Unit-Code`: Unit code
-- `Authorization`: Authentication tokens
-- Custom headers
+- **tenant_id**: Tenant identifier
+- **tenant_code**: Tenant code
+- **unit_id**: Unit identifier
+- **unit_code**: Unit code
+- **request_id**: Unique request ID
+- **user_id**: Authenticated user ID
 
-## Implementation Details
+Context is sent in the payload and automatically applied in the microservice.
 
-### RemoteModule Class
+## Communication Protocol
 
-The framework includes a `RemoteModule` class that handles proxying:
+### Request (Client → Microservice)
+
+```http
+POST /module/execute HTTP/1.1
+Content-Type: application/json
+
+{
+  "module": "permission",
+  "action": "checkPermission",
+  "context": {
+    "tenant_id": "123",
+    "tenant_code": "acme",
+    "unit_id": "456",
+    "unit_code": "warehouse-1",
+    "request_id": "abc123...",
+    "user_id": "789"
+  },
+  "payload": {
+    "user_id": 123,
+    "permission": "product.create"
+  }
+}
+```
+
+### Response (Microservice → Client)
+
+**Success:**
+```json
+{
+  "success": true,
+  "data": true
+}
+```
+
+**Error:**
+```json
+{
+  "success": false,
+  "error": "Error message"
+}
+```
+
+## System Guarantees
+
+✅ **No module needs to know if it's local or remote**
+- Module code is identical in both scenarios
+- Only configuration defines execution mode
+
+✅ **No controller changes code**
+- Controllers use `ModuleRunner` the same way
+- No transport logic inside modules
+
+✅ **No business logic changes**
+- Module logic remains the same
+- Only transport changes (local vs HTTP)
+
+✅ **Total transparency**
+- Same code works in monolith and microservices
+- Migration is done only by changing configuration
+
+## Complete Example: Permission Module
+
+### 1. Permission Module (code)
 
 ```php
 <?php
 
-namespace Metamorphose\Kernel\Module;
+namespace Metamorphose\Modules\Permission;
 
+use Metamorphose\Kernel\Module\ModuleInterface;
 use Psr\Container\ContainerInterface;
-use Psr\Http\Client\ClientInterface;
-use Psr\Http\Message\RequestFactoryInterface;
 use Slim\App;
 
-class RemoteModule implements ModuleInterface
+class Module implements ModuleInterface
 {
-    private string $name;
-    private string $baseUrl;
-    private ?string $routesPrefix;
-    private ClientInterface $httpClient;
-    private RequestFactoryInterface $requestFactory;
-
-    public function __construct(
-        array $config,
-        ClientInterface $httpClient,
-        RequestFactoryInterface $requestFactory
-    ) {
-        $this->name = $config['name'];
-        $this->baseUrl = rtrim($config['base_url'], '/');
-        $this->routesPrefix = $config['routes_prefix'] ?? null;
-        $this->httpClient = $httpClient;
-        $this->requestFactory = $requestFactory;
-    }
-
     public function register(ContainerInterface $container): void
     {
-        // No local services to register
+        // Register services
     }
 
     public function boot(): void
     {
-        // No local initialization needed
+        // Initializations
     }
 
     public function routes(App $app): void
     {
-        $prefix = $this->routesPrefix ?? '';
+        // Module routes (if needed)
+    }
+
+    /**
+     * Checks if user has permission
+     * 
+     * This action can be executed locally or remotely
+     */
+    public function checkPermission(array $payload): bool
+    {
+        $userId = $payload['user_id'] ?? null;
+        $permission = $payload['permission'] ?? null;
         
-        // Proxy all routes to microservice
-        $app->any($prefix . '/{path:.*}', function ($request, $response, $args) {
-            // Forward request to microservice
-            // Preserve all headers and context
-            // Return response
-        });
+        if (!$userId || !$permission) {
+            throw new \RuntimeException('user_id and permission are required');
+        }
+        
+        // Permission check logic
+        // ...
+        
+        return true; // or false
+    }
+
+    /**
+     * Lists user permissions
+     */
+    public function getUserPermissions(array $payload): array
+    {
+        $userId = $payload['user_id'] ?? null;
+        
+        if (!$userId) {
+            throw new \RuntimeException('user_id is required');
+        }
+        
+        // Logic to fetch permissions
+        // ...
+        
+        return ['user.create', 'user.update', 'product.read'];
     }
 }
 ```
 
-### ModuleLoader Enhancement
-
-The `ModuleLoader` detects remote modules:
+### 2. Configuration - Local Mode
 
 ```php
-foreach ($moduleConfigs as $moduleConfig) {
-    if (is_string($moduleConfig)) {
-        // Local module
-        $this->modules[] = new $moduleConfig();
-    } elseif (is_array($moduleConfig) && $moduleConfig['type'] === 'remote') {
-        // Remote module
-        $this->modules[] = new RemoteModule(
-            $moduleConfig,
-            $this->container->get(ClientInterface::class),
-            $this->container->get(RequestFactoryInterface::class)
-        );
+// config/modules.php
+return [
+    'enabled' => [
+        [
+            'class' => \Metamorphose\Modules\Permission\Module::class,
+            'name' => 'permission',
+            'mode' => 'local',
+        ],
+    ],
+];
+```
+
+### 3. Configuration - Remote Mode
+
+```php
+// config/modules.php
+return [
+    'enabled' => [
+        [
+            'class' => \Metamorphose\Modules\Permission\Module::class,
+            'name' => 'permission',
+            'mode' => 'remote',
+            'endpoint' => getenv('PERMISSION_SERVICE_URL') ?: 'http://permission-service:8000',
+            'timeout' => 30,
+        ],
+    ],
+];
+```
+
+### 4. Using the Module (same code for both modes)
+
+```php
+<?php
+
+namespace Metamorphose\Modules\Product\Controller;
+
+use Metamorphose\Kernel\Module\ModuleRunner;
+use Psr\Container\ContainerInterface;
+
+class ProductController
+{
+    public function __construct(
+        private ContainerInterface $container
+    ) {
+    }
+
+    public function create($request, $response)
+    {
+        $moduleRunner = $this->container->get(ModuleRunner::class);
+        
+        // Check permission (works local or remote)
+        $hasPermission = $moduleRunner->execute('permission', 'checkPermission', [
+            'user_id' => $currentUser->getId(),
+            'permission' => 'product.create',
+        ]);
+        
+        if (!$hasPermission) {
+            return $response->withStatus(403)->withJson(['error' => 'Permission denied']);
+        }
+        
+        // Create product...
     }
 }
 ```
@@ -268,17 +579,17 @@ Module code doesn't change. The same module works in:
 Migrate modules one at a time:
 1. Start with all modules in monolith
 2. Extract one module to microservice
-3. Update configuration
+3. Update only configuration
 4. Repeat for other modules
 
-### 3. Independent Scaling
+### 3. Independent Scalability
 
 Scale microservices independently:
 - High-traffic modules get more resources
 - Low-traffic modules use fewer resources
 - Database connections are isolated per service
 
-### 4. Technology Flexibility
+### 4. Technological Flexibility
 
 Each microservice can:
 - Use different PHP versions
@@ -293,8 +604,8 @@ Each microservice can:
 Use environment variables or service discovery:
 
 ```php
-'base_url' => getenv('PRODUCT_SERVICE_URL') 
-    ?: 'http://product-service.' . getenv('KUBERNETES_NAMESPACE') . '.svc.cluster.local',
+'endpoint' => getenv('PERMISSION_SERVICE_URL') 
+    ?: 'http://permission-service.' . getenv('KUBERNETES_NAMESPACE') . '.svc.cluster.local',
 ```
 
 ### 2. Health Checks
@@ -309,34 +620,42 @@ $app->get('/health', function ($request, $response) {
 
 ### 3. Error Handling
 
-Handle microservice failures gracefully:
-
-```php
-try {
-    $proxyResponse = $this->httpClient->sendRequest($proxyRequest);
-} catch (\Exception $e) {
-    // Log error
-    // Return appropriate error response
-    return $response->withStatus(503)
-        ->withJson(['error' => 'Service temporarily unavailable']);
-}
-```
+`RemoteModuleExecutor` automatically handles:
+- Network errors (timeout, connection refused)
+- Response errors (status code != 200)
+- Execution errors (response with success=false)
 
 ### 4. Timeout Configuration
 
 Configure appropriate timeouts:
 
 ```php
-$httpClient = new \GuzzleHttp\Client([
-    'timeout' => 30,
-    'connect_timeout' => 5,
-]);
+[
+    'mode' => 'remote',
+    'endpoint' => 'http://permission-service:8000',
+    'timeout' => 30, // seconds
+]
 ```
 
-### 5. Monitoring
+### 5. Custom Headers
 
-Monitor microservice communication:
-- Log all proxy requests
+Add headers for authentication/authorization:
+
+```php
+[
+    'mode' => 'remote',
+    'endpoint' => 'http://permission-service:8000',
+    'headers' => [
+        'X-API-Key' => getenv('PERMISSION_API_KEY'),
+        'Authorization' => 'Bearer ' . getenv('SERVICE_TOKEN'),
+    ],
+]
+```
+
+### 6. Monitoring
+
+Monitor communication between microservices:
+- Log all remote requests
 - Track response times
 - Alert on failures
 - Monitor service health
@@ -354,17 +673,17 @@ Monitor microservice communication:
 
 1. Create microservice entry point
 2. Deploy microservice
-3. Update main application configuration
+3. Update main application configuration (change `mode` to `remote`)
 4. Test integration
 
 ### Phase 3: Optimization
 
 1. Optimize microservice performance
-2. Implement caching if needed
+2. Implement cache if needed
 3. Add monitoring and logging
 4. Scale as needed
 
-## Example: Complete Setup
+## Example: Complete Configuration
 
 ### Main Application (`config/modules.php`)
 
@@ -379,29 +698,32 @@ return [
         
         // Remote microservices
         [
-            'type' => 'remote',
-            'name' => 'ProductCatalog',
-            'base_url' => getenv('PRODUCT_SERVICE_URL'),
-            'routes_prefix' => '/api/products',
+            'class' => \Metamorphose\Modules\Permission\Module::class,
+            'name' => 'permission',
+            'mode' => 'remote',
+            'endpoint' => getenv('PERMISSION_SERVICE_URL') ?: 'http://permission-service:8000',
+            'timeout' => 30,
         ],
         [
-            'type' => 'remote',
-            'name' => 'OrderManagement',
-            'base_url' => getenv('ORDER_SERVICE_URL'),
-            'routes_prefix' => '/api/orders',
+            'class' => \Metamorphose\Modules\Stock\Module::class,
+            'name' => 'stock',
+            'mode' => 'remote',
+            'endpoint' => getenv('STOCK_SERVICE_URL') ?: 'http://stock-service:8000',
+            'timeout' => 30,
         ],
     ],
 ];
 ```
 
-### Product Service (`config/modules.php`)
+### Permission Service (`config/modules.php`)
 
 ```php
 <?php
 
 return [
     'enabled' => [
-        \Metamorphose\Modules\ProductCatalog\Module::class,
+        // Only this module runs in this microservice
+        \Metamorphose\Modules\Permission\Module::class,
     ],
 ];
 ```
@@ -417,17 +739,17 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - PRODUCT_SERVICE_URL=http://product-service:8000
-      - ORDER_SERVICE_URL=http://order-service:8000
+      - PERMISSION_SERVICE_URL=http://permission-service:8000
+      - STOCK_SERVICE_URL=http://stock-service:8000
   
-  product-service:
+  permission-service:
     build: .
     ports:
       - "8001:8000"
     environment:
       - APP_ENV=production
   
-  order-service:
+  stock-service:
     build: .
     ports:
       - "8002:8000"
@@ -442,669 +764,31 @@ services:
 - Verify module class exists
 - Check namespace and autoloading
 - Ensure module is in correct directory
+- Verify module is enabled in `config/modules.php`
 
 ### Connection Refused
 
-- Check microservice is running
-- Verify base_url is correct
+- Verify microservice is running
+- Verify endpoint is correct
 - Check network connectivity
 - Review firewall rules
 
 ### Context Not Preserved
 
-- Ensure headers are forwarded
+- Ensure context is sent in payload
+- Verify `ModuleExecuteController` applies context correctly
 - Check middleware order
-- Verify proxy implementation
 - Review request/response handling
+
+### Timeout
+
+- Increase timeout in configuration
+- Check microservice performance
+- Check network latency
+- Consider implementing cache
 
 ## Next Steps
 
 - Read about [Modules](modules.md) for module development
 - Learn about [Architecture](architecture.md) for system design
 - Check [Contexts](contexts.md) for context management
-```
-
-```markdown:docs/pt/microservices.md
-# Microserviços e Módulos Remotos
-
-O Metamorphose Framework foi projetado para suportar tanto arquiteturas monolíticas quanto de microserviços. Você pode facilmente extrair módulos para microserviços separados sem alterar o código do módulo em si.
-
-## Visão Geral
-
-O framework permite que você:
-- Execute todos os módulos em uma única aplicação monolítica
-- Extraia módulos específicos para rodar como microserviços separados
-- Misture módulos locais e remotos de forma transparente
-- Migre módulos gradualmente de monólito para microserviços
-
-## Arquitetura
-
-### Modo Monolítico (Padrão)
-
-Todos os módulos rodam no mesmo processo:
-
-```
-┌─────────────────────────────────┐
-│     Aplicação Monolítica        │
-│  ┌──────────┐  ┌──────────┐   │
-│  │ Módulo A │  │ Módulo B │   │
-│  └──────────┘  └──────────┘   │
-│  ┌──────────┐  ┌──────────┐   │
-│  │ Módulo C │  │ Módulo D │   │
-│  └──────────┘  └──────────┘   │
-└─────────────────────────────────┘
-```
-
-### Modo Microserviços
-
-Módulos podem rodar como serviços separados:
-
-```
-┌─────────────────────────────────┐
-│     Aplicação Principal         │
-│  ┌──────────┐  ┌──────────┐   │
-│  │ Módulo A │  │ Módulo B │   │
-│  └──────────┘  └──────────┘   │
-│         │              │        │
-│         ▼              ▼        │
-│  ┌──────────┐  ┌──────────┐   │
-│  │ Product   │  │ Order    │   │
-│  │ Service   │  │ Service  │   │
-│  │ (Remoto)  │  │ (Remoto) │   │
-│  └──────────┘  └──────────┘   │
-└─────────────────────────────────┘
-```
-
-## Configuração
-
-### Passo 1: Configurar Módulos Remotos
-
-Edite `config/modules.php` para definir módulos remotos:
-
-```php
-<?php
-
-return [
-    'enabled' => [
-        // Módulos locais (rodam no monólito)
-        \Metamorphose\Modules\Example\Module::class,
-        \Metamorphose\Modules\Auth\Module::class,
-        
-        // Módulos remotos (microserviços)
-        [
-            'type' => 'remote',
-            'name' => 'ProductCatalog',
-            'base_url' => getenv('PRODUCT_SERVICE_URL') ?: 'http://product-service:8000',
-            'routes_prefix' => '/products', // Prefixo de rota opcional
-        ],
-        [
-            'type' => 'remote',
-            'name' => 'OrderManagement',
-            'base_url' => getenv('ORDER_SERVICE_URL') ?: 'http://order-service:8000',
-            'routes_prefix' => '/orders',
-        ],
-    ],
-];
-```
-
-### Passo 2: Variáveis de Ambiente
-
-Configure variáveis de ambiente para URLs dos microserviços:
-
-```bash
-# .env ou configuração de ambiente
-PRODUCT_SERVICE_URL=http://product-service:8000
-ORDER_SERVICE_URL=http://order-service:8000
-```
-
-## Criando um Microserviço
-
-### Passo 1: Criar Entry Point do Microserviço
-
-Crie `public/product-service.php` (ou faça deploy em servidor separado):
-
-```php
-<?php
-
-require_once __DIR__ . '/../vendor/autoload.php';
-
-use Metamorphose\Bootstrap;
-
-$container = Bootstrap\buildContainer();
-$app = Bootstrap\createApp($container);
-
-Bootstrap\registerMiddlewares($app, $container);
-
-// Carregar APENAS o módulo ProductCatalog
-$loader = new \Metamorphose\Kernel\Module\ModuleLoader(
-    $container,
-    $app,
-    [\Metamorphose\Modules\ProductCatalog\Module::class]
-);
-$loader->load();
-
-$app->run();
-```
-
-### Passo 2: Configurar Microserviço
-
-Crie `config/modules.php` no microserviço:
-
-```php
-<?php
-
-return [
-    'enabled' => [
-        // Apenas este módulo roda neste microserviço
-        \Metamorphose\Modules\ProductCatalog\Module::class,
-    ],
-];
-```
-
-### Passo 3: Fazer Deploy do Microserviço
-
-A estrutura do microserviço:
-
-```
-product-service/
-├── app/
-│   └── Modules/
-│       └── ProductCatalog/  # Apenas este módulo
-├── config/
-│   ├── app.php
-│   ├── database.php
-│   ├── log.php
-│   └── modules.php          # Apenas ProductCatalog habilitado
-├── public/
-│   └── index.php             # Entry point do microserviço
-└── vendor/
-```
-
-## Como Funciona
-
-### Fluxo de Requisição
-
-1. **Requisição chega** na aplicação principal
-2. **Rota corresponde** ao prefixo do módulo remoto (ex: `/products/*`)
-3. **Middleware proxy** encaminha requisição para o microserviço
-4. **Headers de contexto** (`X-Tenant-ID`, `X-Unit-ID`) são preservados
-5. **Resposta** é retornada ao cliente
-
-### Preservação de Contexto
-
-Todas as informações de contexto são automaticamente encaminhadas:
-
-- `X-Tenant-ID`: Identificador do tenant
-- `X-Unit-ID`: Identificador da unit
-- `X-Tenant-Code`: Código do tenant
-- `X-Unit-Code`: Código da unit
-- `Authorization`: Tokens de autenticação
-- Headers customizados
-
-## Detalhes de Implementação
-
-### Classe RemoteModule
-
-O framework inclui uma classe `RemoteModule` que gerencia o proxy:
-
-```php
-<?php
-
-namespace Metamorphose\Kernel\Module;
-
-use Psr\Container\ContainerInterface;
-use Psr\Http\Client\ClientInterface;
-use Psr\Http\Message\RequestFactoryInterface;
-use Slim\App;
-
-class RemoteModule implements ModuleInterface
-{
-    private string $name;
-    private string $baseUrl;
-    private ?string $routesPrefix;
-    private ClientInterface $httpClient;
-    private RequestFactoryInterface $requestFactory;
-
-    public function __construct(
-        array $config,
-        ClientInterface $httpClient,
-        RequestFactoryInterface $requestFactory
-    ) {
-        $this->name = $config['name'];
-        $this->baseUrl = rtrim($config['base_url'], '/');
-        $this->routesPrefix = $config['routes_prefix'] ?? null;
-        $this->httpClient = $httpClient;
-        $this->requestFactory = $requestFactory;
-    }
-
-    public function register(ContainerInterface $container): void
-    {
-        // Nenhum serviço local para registrar
-    }
-
-    public function boot(): void
-    {
-        // Nenhuma inicialização local necessária
-    }
-
-    public function routes(App $app): void
-    {
-        $prefix = $this->routesPrefix ?? '';
-        
-        // Proxy para todas as rotas do microserviço
-        $app->any($prefix . '/{path:.*}', function ($request, $response, $args) {
-            // Encaminhar requisição para microserviço
-            // Preservar todos os headers e contexto
-            // Retornar resposta
-        });
-    }
-}
-```
-
-### Melhoria do ModuleLoader
-
-O `ModuleLoader` detecta módulos remotos:
-
-```php
-foreach ($moduleConfigs as $moduleConfig) {
-    if (is_string($moduleConfig)) {
-        // Módulo local
-        $this->modules[] = new $moduleConfig();
-    } elseif (is_array($moduleConfig) && $moduleConfig['type'] === 'remote') {
-        // Módulo remoto
-        $this->modules[] = new RemoteModule(
-            $moduleConfig,
-            $this->container->get(ClientInterface::class),
-            $this->container->get(RequestFactoryInterface::class)
-        );
-    }
-}
-```
-
-## Benefícios
-
-### 1. Transparência de Código
-
-O código do módulo não muda. O mesmo módulo funciona em:
-- Modo monolítico
-- Modo microserviço
-- Modo misto
-
-### 2. Migração Gradual
-
-Migre módulos um de cada vez:
-1. Comece com todos os módulos no monólito
-2. Extraia um módulo para microserviço
-3. Atualize configuração
-4. Repita para outros módulos
-
-### 3. Escalabilidade Independente
-
-Escale microserviços independentemente:
-- Módulos de alto tráfego recebem mais recursos
-- Módulos de baixo tráfego usam menos recursos
-- Conexões de banco de dados são isoladas por serviço
-
-### 4. Flexibilidade Tecnológica
-
-Cada microserviço pode:
-- Usar versões diferentes de PHP
-- Usar bancos de dados diferentes
-- Fazer deploy independentemente
-- Ter seu próprio pipeline CI/CD
-
-## Melhores Práticas
-
-### 1. Service Discovery
-
-Use variáveis de ambiente ou service discovery:
-
-```php
-'base_url' => getenv('PRODUCT_SERVICE_URL') 
-    ?: 'http://product-service.' . getenv('KUBERNETES_NAMESPACE') . '.svc.cluster.local',
-```
-
-### 2. Health Checks
-
-Implemente endpoints de health check nos microserviços:
-
-```php
-$app->get('/health', function ($request, $response) {
-    return $response->withJson(['status' => 'ok']);
-});
-```
-
-### 3. Tratamento de Erros
-
-Trate falhas de microserviços graciosamente:
-
-```php
-try {
-    $proxyResponse = $this->httpClient->sendRequest($proxyRequest);
-} catch (\Exception $e) {
-    // Logar erro
-    // Retornar resposta de erro apropriada
-    return $response->withStatus(503)
-        ->withJson(['error' => 'Serviço temporariamente indisponível']);
-}
-```
-
-### 4. Configuração de Timeout
-
-Configure timeouts apropriados:
-
-```php
-$httpClient = new \GuzzleHttp\Client([
-    'timeout' => 30,
-    'connect_timeout' => 5,
-]);
-```
-
-### 5. Monitoramento
-
-Monitore comunicação entre microserviços:
-- Logar todas as requisições proxy
-- Rastrear tempos de resposta
-- Alertar sobre falhas
-- Monitorar saúde dos serviços
-
-## Estratégia de Migração
-
-### Fase 1: Preparação
-
-1. Identificar módulos para extrair
-2. Garantir que módulos são autocontidos
-3. Verificar que não há dependências diretas entre módulos
-4. Testar módulos independentemente
-
-### Fase 2: Extração
-
-1. Criar entry point do microserviço
-2. Fazer deploy do microserviço
-3. Atualizar configuração da aplicação principal
-4. Testar integração
-
-### Fase 3: Otimização
-
-1. Otimizar performance do microserviço
-2. Implementar cache se necessário
-3. Adicionar monitoramento e logging
-4. Escalar conforme necessário
-
-## Exemplo: Configuração Completa
-
-### Aplicação Principal (`config/modules.php`)
-
-```php
-<?php
-
-return [
-    'enabled' => [
-        // Módulos locais
-        \Metamorphose\Modules\Auth\Module::class,
-        \Metamorphose\Modules\UserManagement\Module::class,
-        
-        // Microserviços remotos
-        [
-            'type' => 'remote',
-            'name' => 'ProductCatalog',
-            'base_url' => getenv('PRODUCT_SERVICE_URL'),
-            'routes_prefix' => '/api/products',
-        ],
-        [
-            'type' => 'remote',
-            'name' => 'OrderManagement',
-            'base_url' => getenv('ORDER_SERVICE_URL'),
-            'routes_prefix' => '/api/orders',
-        ],
-    ],
-];
-```
-
-### Serviço de Produtos (`config/modules.php`)
-
-```php
-<?php
-
-return [
-    'enabled' => [
-        \Metamorphose\Modules\ProductCatalog\Module::class,
-    ],
-];
-```
-
-### Exemplo Docker Compose
-
-```yaml
-version: '3.8'
-
-services:
-  main-app:
-    build: .
-    ports:
-      - "8000:8000"
-    environment:
-      - PRODUCT_SERVICE_URL=http://product-service:8000
-      - ORDER_SERVICE_URL=http://order-service:8000
-  
-  product-service:
-    build: .
-    ports:
-      - "8001:8000"
-    environment:
-      - APP_ENV=production
-  
-  order-service:
-    build: .
-    ports:
-      - "8002:8000"
-    environment:
-      - APP_ENV=production
-```
-
-## Solução de Problemas
-
-### Módulo Não Encontrado
-
-- Verificar se a classe do módulo existe
-- Verificar namespace e autoloading
-- Garantir que módulo está no diretório correto
-
-### Conexão Recusada
-
-- Verificar se microserviço está rodando
-- Verificar se base_url está correto
-- Verificar conectividade de rede
-- Revisar regras de firewall
-
-### Contexto Não Preservado
-
-- Garantir que headers são encaminhados
-- Verificar ordem dos middlewares
-- Verificar implementação do proxy
-- Revisar tratamento de requisição/resposta
-
-## Próximos Passos
-
-- Leia sobre [Módulos](modules.md) para desenvolvimento de módulos
-- Aprenda sobre [Arquitetura](architecture.md) para design de sistema
-- Verifique [Contextos](contexts.md) para gerenciamento de contexto
-```
-
-Agora atualizando os READMEs para incluir links para essa nova documentação:
-
-```markdown:docs/en/README.md
-# Metamorphose Framework - Documentation
-
-Metamorphose Framework is a modular, multi-tenant PHP application kernel based on Slim Framework.
-
-## Table of Contents
-
-1. [Installation](installation.md)
-2. [Getting Started](getting-started.md)
-3. [Architecture](architecture.md)
-4. [Modules](modules.md)
-5. [CLI Commands](cli.md)
-6. [Contexts](contexts.md)
-7. [Database](database.md)
-8. [Logging](logging.md)
-9. [Permissions](permissions.md)
-10. [Microservices](microservices.md)
-
-## Overview
-
-Metamorphose Framework is designed to be:
-
-- **Modular**: Plug-and-play modules that can be easily added or removed
-- **Multi-tenant**: Supports core, tenant, and unit scopes
-- **Context-aware**: Explicit contexts for tenant, unit, and request
-- **Runtime-agnostic**: Works with PHP-FPM, Swoole, and FrankenPHP
-- **PSR-compliant**: Follows PSR-4, PSR-7, PSR-11, and PSR-15 standards
-- **Explicit**: No hidden magic, all code is explicit and readable
-- **Microservices-ready**: Easily extract modules to separate microservices
-
-## Key Features
-
-- Modular architecture with pluggable modules
-- Multi-tenant support (core, tenant, unit)
-- Explicit context management
-- Flexible database connections per scope
-- Structured logging with HTTP middleware
-- Multi-scope permission system
-- Built-in CLI for module creation and migrations
-- No global mutable state
-- Compatible with persistent runtimes
-- **Microservices support**: Run modules as separate services
-
-## Requirements
-
-- PHP >= 8.1
-- Composer
-- MySQL/MariaDB (or compatible database)
-
-## Quick Start
-
-```bash
-# Install dependencies
-composer install
-
-# Create a new module
-php bin/metamorphose module:make MyModule
-
-# Run migrations
-php bin/metamorphose migrate --scope=core
-```
-
-## Documentation Structure
-
-Each section of the documentation covers a specific aspect of the framework:
-
-- **Installation**: How to set up the framework
-- **Getting Started**: Your first steps with the framework
-- **Architecture**: Understanding the framework's architecture
-- **Modules**: Creating and managing modules
-- **CLI Commands**: Using the command-line interface
-- **Contexts**: Working with tenant, unit, and request contexts
-- **Database**: Database connections and migrations
-- **Logging**: Configuring and using the logging system
-- **Permissions**: Implementing permission checks
-- **Microservices**: Extracting modules to separate microservices
-```
-
-```markdown:docs/pt/README.md
-# Metamorphose Framework - Documentação
-
-Metamorphose Framework é um kernel de aplicação PHP modular e multi-tenant baseado em Slim Framework.
-
-## Índice
-
-1. [Instalação](installation.md)
-2. [Primeiros Passos](getting-started.md)
-3. [Arquitetura](architecture.md)
-4. [Módulos](modules.md)
-5. [Comandos CLI](cli.md)
-6. [Contextos](contexts.md)
-7. [Banco de Dados](database.md)
-8. [Logs](logging.md)
-9. [Permissões](permissions.md)
-10. [Microserviços](microservices.md)
-
-## Visão Geral
-
-O Metamorphose Framework foi projetado para ser:
-
-- **Modular**: Módulos plug-and-play que podem ser facilmente adicionados ou removidos
-- **Multi-tenant**: Suporta escopos core, tenant e unit
-- **Orientado a contexto**: Contextos explícitos para tenant, unit e request
-- **Agnóstico de runtime**: Funciona com PHP-FPM, Swoole e FrankenPHP
-- **Compatível com PSR**: Segue os padrões PSR-4, PSR-7, PSR-11 e PSR-15
-- **Explícito**: Sem mágica oculta, todo código é explícito e legível
-- **Pronto para microserviços**: Extraia facilmente módulos para microserviços separados
-
-## Principais Recursos
-
-- Arquitetura modular com módulos plugáveis
-- Suporte multi-tenant (core, tenant, unit)
-- Gerenciamento explícito de contextos
-- Conexões de banco de dados flexíveis por escopo
-- Sistema de logs estruturado com middleware HTTP
-- Sistema de permissões multi-escopo
-- CLI integrado para criação de módulos e migrações
-- Sem estado global mutável
-- Compatível com runtimes persistentes
-- **Suporte a microserviços**: Execute módulos como serviços separados
-
-## Requisitos
-
-- PHP >= 8.1
-- Composer
-- MySQL/MariaDB (ou banco de dados compatível)
-
-## Início Rápido
-
-```bash
-# Instalar dependências
-composer install
-
-# Criar um novo módulo
-php bin/metamorphose module:make MeuModulo
-
-# Executar migrações
-php bin/metamorphose migrate --scope=core
-```
-
-## Estrutura da Documentação
-
-Cada seção da documentação cobre um aspecto específico do framework:
-
-- **Instalação**: Como configurar o framework
-- **Primeiros Passos**: Seus primeiros passos com o framework
-- **Arquitetura**: Entendendo a arquitetura do framework
-- **Módulos**: Criando e gerenciando módulos
-- **Comandos CLI**: Usando a interface de linha de comando
-- **Contextos**: Trabalhando com contextos de tenant, unit e request
-- **Banco de Dados**: Conexões de banco de dados e migrações
-- **Logs**: Configurando e usando o sistema de logs
-- **Permissões**: Implementando verificações de permissão
-- **Microserviços**: Extraindo módulos para microserviços separados
-```
-
-Você está em modo de leitura. Para aplicar essas mudanças, alterne para o modo de edição ou copie os arquivos acima para:
-
-1. `docs/en/microservices.md` - Documentação em inglês
-2. `docs/pt/microservices.md` - Documentação em português
-3. Atualizar `docs/en/README.md` e `docs/pt/README.md` com os links
-
-A documentação cobre:
-- Visão geral da arquitetura
-- Como configurar módulos remotos
-- Como criar um microserviço
-- Detalhes de implementação
-- Benefícios e melhores práticas
-- Estratégia de migração
-- Exemplos práticos
-- Solução de problemas
-
-Quer que eu aplique essas mudanças?
-```
-

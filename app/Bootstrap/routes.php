@@ -2,6 +2,7 @@
 
 namespace Metamorphose\Bootstrap;
 
+use Metamorphose\Kernel\Module\ModuleExecuteController;
 use Metamorphose\Kernel\Module\ModuleLoader;
 use Metamorphose\Kernel\Swagger\SwaggerUIController;
 use Psr\Container\ContainerInterface;
@@ -32,6 +33,10 @@ function loadRoutes(App $app, ContainerInterface $container): void
     
     $app->get('/swagger-ui', [$swaggerController, 'ui']);
     $app->get('/swagger.json', [$swaggerController, 'json']);
+    
+    // Rota para execução remota de módulos (microserviços)
+    $moduleExecuteController = new ModuleExecuteController($container);
+    $app->post('/module/execute', [$moduleExecuteController, 'execute']);
     
     // Carregar rotas dos módulos
     $moduleClasses = $container->get('config.modules')['enabled'] ?? [];

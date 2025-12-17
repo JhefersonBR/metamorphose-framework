@@ -1,4 +1,4 @@
-# Microserviços e Módulos Remotos
+# Microserviços e Execução Remota de Módulos
 
 O Metamorphose Framework foi projetado para suportar tanto arquiteturas monolíticas quanto de microserviços. Você pode facilmente extrair módulos para microserviços separados sem alterar o código do módulo em si.
 
@@ -9,6 +9,7 @@ O framework permite que você:
 - Extraia módulos específicos para rodar como microserviços separados
 - Misture módulos locais e remotos de forma transparente
 - Migre módulos gradualmente de monólito para microserviços
+- **Troque entre local e remoto apenas por configuração, sem mudar código**
 
 ## Arquitetura
 
@@ -37,44 +38,93 @@ Módulos podem rodar como serviços separados:
 │     Aplicação Principal         │
 │  ┌──────────┐  ┌──────────┐   │
 │  │ Módulo A │  │ Módulo B │   │
+│  │ (Local)  │  │ (Local)  │   │
 │  └──────────┘  └──────────┘   │
 │         │              │        │
 │         ▼              ▼        │
 │  ┌──────────┐  ┌──────────┐   │
-│  │ Product   │  │ Order    │   │
+│  │ Permission│  │ Stock    │   │
 │  │ Service   │  │ Service  │   │
 │  │ (Remoto)  │  │ (Remoto) │   │
 │  └──────────┘  └──────────┘   │
 └─────────────────────────────────┘
 ```
 
+## Sistema de Execução de Módulos
+
+O framework utiliza um sistema de **executores de módulos** que permite executar ações de módulos localmente ou remotamente de forma transparente.
+
+### Componentes
+
+#### ModuleExecutorInterface
+
+Interface genérica que define o contrato para execução de módulos:
+
+```php
+interface ModuleExecutorInterface
+{
+    public function execute(string $moduleName, string $action, array $payload = []): mixed;
+}
+```
+
+#### LocalModuleExecutor
+
+Executa módulos diretamente no mesmo processo (monolítico):
+
+- Resolve o módulo via ModuleLoader
+- Chama o método diretamente
+- Injeta contextos se necessário
+- Executa no mesmo processo
+
+#### RemoteModuleExecutor
+
+Executa módulos configurados como remotos via HTTP:
+
+- Envia requisição HTTP para o microserviço
+- Preserva contexto (tenant, unit, request, user)
+- Retorna resultado como se fosse execução local
+- Trata erros de rede e respostas inválidas
+
+#### ModuleRunner
+
+Facade que decide automaticamente qual executor usar:
+
+- Lê configuração de módulos
+- Verifica se módulo é `local` ou `remote`
+- Delega para executor adequado
+- **Nenhum módulo precisa saber se é local ou remoto**
+
 ## Configuração
 
-### Passo 1: Configurar Módulos Remotos
+### Passo 1: Configurar Módulos
 
-Edite `config/modules.php` para definir módulos remotos:
+Edite `config/modules.php` para definir módulos locais e remotos:
 
 ```php
 <?php
 
 return [
     'enabled' => [
-        // Módulos locais (rodam no monólito)
-        \Metamorphose\Modules\Example\Module::class,
+        // Formato 1: Módulo local (apenas classe)
         \Metamorphose\Modules\Auth\Module::class,
         
-        // Módulos remotos (microserviços)
+        // Formato 2: Módulo local (com configuração explícita)
         [
-            'type' => 'remote',
-            'name' => 'ProductCatalog',
-            'base_url' => getenv('PRODUCT_SERVICE_URL') ?: 'http://product-service:8000',
-            'routes_prefix' => '/products', // Prefixo de rota opcional
+            'class' => \Metamorphose\Modules\Stock\Module::class,
+            'name' => 'stock', // opcional
+            'mode' => 'local', // padrão: 'local'
         ],
+        
+        // Formato 3: Módulo remoto (microserviço)
         [
-            'type' => 'remote',
-            'name' => 'OrderManagement',
-            'base_url' => getenv('ORDER_SERVICE_URL') ?: 'http://order-service:8000',
-            'routes_prefix' => '/orders',
+            'class' => \Metamorphose\Modules\Permission\Module::class,
+            'name' => 'permission',
+            'mode' => 'remote',
+            'endpoint' => getenv('PERMISSION_SERVICE_URL') ?: 'http://permission-service:8000',
+            'timeout' => 30, // opcional, padrão: 30 segundos
+            'headers' => [ // opcional, headers customizados
+                'X-API-Key' => getenv('PERMISSION_API_KEY'),
+            ],
         ],
     ],
 ];
@@ -86,15 +136,98 @@ Configure variáveis de ambiente para URLs dos microserviços:
 
 ```bash
 # .env ou configuração de ambiente
-PRODUCT_SERVICE_URL=http://product-service:8000
-ORDER_SERVICE_URL=http://order-service:8000
+PERMISSION_SERVICE_URL=http://permission-service:8000
+PERMISSION_API_KEY=your-api-key-here
+```
+
+## Usando ModuleRunner
+
+### Executando Ações de Módulos
+
+Para executar uma ação de um módulo, use o `ModuleRunner`:
+
+```php
+use Metamorphose\Kernel\Module\ModuleRunner;
+
+// No seu controller ou service
+$moduleRunner = $container->get(ModuleRunner::class);
+
+// Executar ação localmente ou remotamente (transparente)
+$result = $moduleRunner->execute('permission', 'checkPermission', [
+    'user_id' => 123,
+    'permission' => 'user.create',
+]);
+
+// O mesmo código funciona se o módulo for local ou remoto!
+```
+
+### Exemplo: Módulo Permission
+
+**Módulo Permission (local ou remoto):**
+
+```php
+<?php
+
+namespace Metamorphose\Modules\Permission;
+
+class Module implements ModuleInterface
+{
+    public function register(ContainerInterface $container): void
+    {
+        // Registrar serviços
+    }
+
+    public function boot(): void
+    {
+        // Inicializações
+    }
+
+    public function routes(App $app): void
+    {
+        // Rotas do módulo
+    }
+
+    /**
+     * Ação que pode ser executada localmente ou remotamente
+     */
+    public function checkPermission(array $payload): bool
+    {
+        $userId = $payload['user_id'];
+        $permission = $payload['permission'];
+        
+        // Lógica de verificação de permissão
+        // ...
+        
+        return true; // ou false
+    }
+}
+```
+
+**Usando o módulo (sem saber se é local ou remoto):**
+
+```php
+// Em qualquer controller ou service
+$moduleRunner = $container->get(ModuleRunner::class);
+
+$hasPermission = $moduleRunner->execute('permission', 'checkPermission', [
+    'user_id' => $currentUser->getId(),
+    'permission' => 'product.create',
+]);
+
+if (!$hasPermission) {
+    throw new \RuntimeException('Permissão negada');
+}
 ```
 
 ## Criando um Microserviço
 
 ### Passo 1: Criar Entry Point do Microserviço
 
-Crie `public/product-service.php` (ou faça deploy em servidor separado):
+O framework já fornece o endpoint `/module/execute` que permite executar módulos remotamente. Para criar um microserviço dedicado, você pode:
+
+**Opção A: Usar o mesmo código base (recomendado)**
+
+Crie `public/permission-service.php`:
 
 ```php
 <?php
@@ -107,14 +240,37 @@ $container = Bootstrap\buildContainer();
 $app = Bootstrap\createApp($container);
 
 Bootstrap\registerMiddlewares($app, $container);
+Bootstrap\loadRoutes($app, $container);
 
-// Carregar APENAS o módulo ProductCatalog
-$loader = new \Metamorphose\Kernel\Module\ModuleLoader(
-    $container,
-    $app,
-    [\Metamorphose\Modules\ProductCatalog\Module::class]
-);
+// O endpoint /module/execute já está disponível via loadRoutes()
+// Ele executará apenas os módulos habilitados neste serviço
+
+$app->run();
+```
+
+**Opção B: Entry point customizado**
+
+Se precisar de um entry point específico, você pode criar:
+
+```php
+<?php
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Metamorphose\Bootstrap;
+use Metamorphose\Kernel\Module\ModuleLoader;
+
+$container = Bootstrap\buildContainer();
+$app = Bootstrap\createApp($container);
+
+Bootstrap\registerMiddlewares($app, $container);
+
+// Carregar APENAS o módulo Permission
+$moduleClasses = $container->get('config.modules')['enabled'] ?? [];
+$loader = new ModuleLoader($container, $app, $moduleClasses);
 $loader->load();
+
+// O endpoint /module/execute já está disponível via Bootstrap\loadRoutes()
 
 $app->run();
 ```
@@ -129,7 +285,7 @@ Crie `config/modules.php` no microserviço:
 return [
     'enabled' => [
         // Apenas este módulo roda neste microserviço
-        \Metamorphose\Modules\ProductCatalog\Module::class,
+        \Metamorphose\Modules\Permission\Module::class,
     ],
 ];
 ```
@@ -139,117 +295,272 @@ return [
 A estrutura do microserviço:
 
 ```
-product-service/
+permission-service/
 ├── app/
 │   └── Modules/
-│       └── ProductCatalog/  # Apenas este módulo
+│       └── Permission/  # Apenas este módulo
 ├── config/
 │   ├── app.php
 │   ├── database.php
 │   ├── log.php
-│   └── modules.php          # Apenas ProductCatalog habilitado
+│   └── modules.php      # Apenas Permission habilitado
 ├── public/
-│   └── index.php             # Entry point do microserviço
+│   └── index.php         # Entry point do microserviço
 └── vendor/
 ```
 
 ## Como Funciona
 
-### Fluxo de Requisição
+### Fluxo de Execução Local
 
-1. **Requisição chega** na aplicação principal
-2. **Rota corresponde** ao prefixo do módulo remoto (ex: `/products/*`)
-3. **Middleware proxy** encaminha requisição para o microserviço
-4. **Headers de contexto** (`X-Tenant-ID`, `X-Unit-ID`) são preservados
-5. **Resposta** é retornada ao cliente
+1. **Código chama** `ModuleRunner::execute('permission', 'checkPermission', $payload)`
+2. **ModuleRunner verifica** configuração: módulo é `local`
+3. **LocalModuleExecutor** resolve o módulo via ModuleLoader
+4. **Chama método diretamente**: `$module->checkPermission($payload)`
+5. **Retorna resultado** diretamente
+
+### Fluxo de Execução Remota
+
+1. **Código chama** `ModuleRunner::execute('permission', 'checkPermission', $payload)`
+2. **ModuleRunner verifica** configuração: módulo é `remote`
+3. **RemoteModuleExecutor** constrói payload padronizado:
+   ```json
+   {
+     "module": "permission",
+     "action": "checkPermission",
+     "context": {
+       "tenant_id": "123",
+       "unit_id": "456",
+       "request_id": "abc...",
+       "user_id": "789"
+     },
+     "payload": {
+       "user_id": 123,
+       "permission": "product.create"
+     }
+   }
+   ```
+4. **Envia requisição HTTP POST** para `{endpoint}/module/execute`
+5. **Microserviço recebe** requisição em `/module/execute`
+6. **ModuleExecuteController** aplica contexto e executa ação localmente
+7. **Retorna resposta**:
+   ```json
+   {
+     "success": true,
+     "data": true
+   }
+   ```
+8. **RemoteModuleExecutor** decodifica e retorna resultado
+9. **Código recebe** resultado como se fosse execução local
 
 ### Preservação de Contexto
 
-Todas as informações de contexto são automaticamente encaminhadas:
+Todas as informações de contexto são automaticamente preservadas:
 
-- `X-Tenant-ID`: Identificador do tenant
-- `X-Unit-ID`: Identificador da unit
-- `X-Tenant-Code`: Código do tenant
-- `X-Unit-Code`: Código da unit
-- `Authorization`: Tokens de autenticação
-- Headers customizados
+- **tenant_id**: Identificador do tenant
+- **tenant_code**: Código do tenant
+- **unit_id**: Identificador da unit
+- **unit_code**: Código da unit
+- **request_id**: ID único da requisição
+- **user_id**: ID do usuário autenticado
 
-## Detalhes de Implementação
+O contexto é enviado no payload e aplicado automaticamente no microserviço.
 
-### Classe RemoteModule
+## Protocolo de Comunicação
 
-O framework inclui uma classe `RemoteModule` que gerencia o proxy:
+### Requisição (Cliente → Microserviço)
+
+```http
+POST /module/execute HTTP/1.1
+Content-Type: application/json
+
+{
+  "module": "permission",
+  "action": "checkPermission",
+  "context": {
+    "tenant_id": "123",
+    "tenant_code": "acme",
+    "unit_id": "456",
+    "unit_code": "warehouse-1",
+    "request_id": "abc123...",
+    "user_id": "789"
+  },
+  "payload": {
+    "user_id": 123,
+    "permission": "product.create"
+  }
+}
+```
+
+### Resposta (Microserviço → Cliente)
+
+**Sucesso:**
+```json
+{
+  "success": true,
+  "data": true
+}
+```
+
+**Erro:**
+```json
+{
+  "success": false,
+  "error": "Mensagem de erro"
+}
+```
+
+## Garantias do Sistema
+
+✅ **Nenhum módulo precisa saber se é local ou remoto**
+- O código do módulo é idêntico nos dois cenários
+- Apenas a configuração define o modo de execução
+
+✅ **Nenhum controller muda código**
+- Controllers usam `ModuleRunner` da mesma forma
+- Não há lógica de transporte dentro dos módulos
+
+✅ **Nenhuma regra de negócio muda**
+- A lógica do módulo permanece a mesma
+- Apenas o transporte muda (local vs HTTP)
+
+✅ **Transparência total**
+- O mesmo código funciona em monólito e microserviços
+- Migração é feita apenas mudando configuração
+
+## Exemplo Completo: Permission Module
+
+### 1. Módulo Permission (código)
 
 ```php
 <?php
 
-namespace Metamorphose\Kernel\Module;
+namespace Metamorphose\Modules\Permission;
 
+use Metamorphose\Kernel\Module\ModuleInterface;
 use Psr\Container\ContainerInterface;
-use Psr\Http\Client\ClientInterface;
-use Psr\Http\Message\RequestFactoryInterface;
 use Slim\App;
 
-class RemoteModule implements ModuleInterface
+class Module implements ModuleInterface
 {
-    private string $name;
-    private string $baseUrl;
-    private ?string $routesPrefix;
-    private ClientInterface $httpClient;
-    private RequestFactoryInterface $requestFactory;
-
-    public function __construct(
-        array $config,
-        ClientInterface $httpClient,
-        RequestFactoryInterface $requestFactory
-    ) {
-        $this->name = $config['name'];
-        $this->baseUrl = rtrim($config['base_url'], '/');
-        $this->routesPrefix = $config['routes_prefix'] ?? null;
-        $this->httpClient = $httpClient;
-        $this->requestFactory = $requestFactory;
-    }
-
     public function register(ContainerInterface $container): void
     {
-        // Nenhum serviço local para registrar
+        // Registrar serviços
     }
 
     public function boot(): void
     {
-        // Nenhuma inicialização local necessária
+        // Inicializações
     }
 
     public function routes(App $app): void
     {
-        $prefix = $this->routesPrefix ?? '';
+        // Rotas do módulo (se necessário)
+    }
+
+    /**
+     * Verifica se usuário tem permissão
+     * 
+     * Esta ação pode ser executada localmente ou remotamente
+     */
+    public function checkPermission(array $payload): bool
+    {
+        $userId = $payload['user_id'] ?? null;
+        $permission = $payload['permission'] ?? null;
         
-        // Proxy para todas as rotas do microserviço
-        $app->any($prefix . '/{path:.*}', function ($request, $response, $args) {
-            // Encaminhar requisição para microserviço
-            // Preservar todos os headers e contexto
-            // Retornar resposta
-        });
+        if (!$userId || !$permission) {
+            throw new \RuntimeException('user_id e permission são obrigatórios');
+        }
+        
+        // Lógica de verificação de permissão
+        // ...
+        
+        return true; // ou false
+    }
+
+    /**
+     * Lista permissões do usuário
+     */
+    public function getUserPermissions(array $payload): array
+    {
+        $userId = $payload['user_id'] ?? null;
+        
+        if (!$userId) {
+            throw new \RuntimeException('user_id é obrigatório');
+        }
+        
+        // Lógica para buscar permissões
+        // ...
+        
+        return ['user.create', 'user.update', 'product.read'];
     }
 }
 ```
 
-### Melhoria do ModuleLoader
-
-O `ModuleLoader` detecta módulos remotos:
+### 2. Configuração - Modo Local
 
 ```php
-foreach ($moduleConfigs as $moduleConfig) {
-    if (is_string($moduleConfig)) {
-        // Módulo local
-        $this->modules[] = new $moduleConfig();
-    } elseif (is_array($moduleConfig) && $moduleConfig['type'] === 'remote') {
-        // Módulo remoto
-        $this->modules[] = new RemoteModule(
-            $moduleConfig,
-            $this->container->get(ClientInterface::class),
-            $this->container->get(RequestFactoryInterface::class)
-        );
+// config/modules.php
+return [
+    'enabled' => [
+        [
+            'class' => \Metamorphose\Modules\Permission\Module::class,
+            'name' => 'permission',
+            'mode' => 'local',
+        ],
+    ],
+];
+```
+
+### 3. Configuração - Modo Remoto
+
+```php
+// config/modules.php
+return [
+    'enabled' => [
+        [
+            'class' => \Metamorphose\Modules\Permission\Module::class,
+            'name' => 'permission',
+            'mode' => 'remote',
+            'endpoint' => getenv('PERMISSION_SERVICE_URL') ?: 'http://permission-service:8000',
+            'timeout' => 30,
+        ],
+    ],
+];
+```
+
+### 4. Usando o Módulo (mesmo código para ambos os modos)
+
+```php
+<?php
+
+namespace Metamorphose\Modules\Product\Controller;
+
+use Metamorphose\Kernel\Module\ModuleRunner;
+use Psr\Container\ContainerInterface;
+
+class ProductController
+{
+    public function __construct(
+        private ContainerInterface $container
+    ) {
+    }
+
+    public function create($request, $response)
+    {
+        $moduleRunner = $this->container->get(ModuleRunner::class);
+        
+        // Verificar permissão (funciona local ou remoto)
+        $hasPermission = $moduleRunner->execute('permission', 'checkPermission', [
+            'user_id' => $currentUser->getId(),
+            'permission' => 'product.create',
+        ]);
+        
+        if (!$hasPermission) {
+            return $response->withStatus(403)->withJson(['error' => 'Permissão negada']);
+        }
+        
+        // Criar produto...
     }
 }
 ```
@@ -268,7 +579,7 @@ O código do módulo não muda. O mesmo módulo funciona em:
 Migre módulos um de cada vez:
 1. Comece com todos os módulos no monólito
 2. Extraia um módulo para microserviço
-3. Atualize configuração
+3. Atualize apenas a configuração
 4. Repita para outros módulos
 
 ### 3. Escalabilidade Independente
@@ -293,8 +604,8 @@ Cada microserviço pode:
 Use variáveis de ambiente ou service discovery:
 
 ```php
-'base_url' => getenv('PRODUCT_SERVICE_URL') 
-    ?: 'http://product-service.' . getenv('KUBERNETES_NAMESPACE') . '.svc.cluster.local',
+'endpoint' => getenv('PERMISSION_SERVICE_URL') 
+    ?: 'http://permission-service.' . getenv('KUBERNETES_NAMESPACE') . '.svc.cluster.local',
 ```
 
 ### 2. Health Checks
@@ -309,34 +620,42 @@ $app->get('/health', function ($request, $response) {
 
 ### 3. Tratamento de Erros
 
-Trate falhas de microserviços graciosamente:
-
-```php
-try {
-    $proxyResponse = $this->httpClient->sendRequest($proxyRequest);
-} catch (\Exception $e) {
-    // Logar erro
-    // Retornar resposta de erro apropriada
-    return $response->withStatus(503)
-        ->withJson(['error' => 'Serviço temporariamente indisponível']);
-}
-```
+O `RemoteModuleExecutor` trata automaticamente:
+- Erros de rede (timeout, conexão recusada)
+- Erros de resposta (status code != 200)
+- Erros de execução (resposta com success=false)
 
 ### 4. Configuração de Timeout
 
 Configure timeouts apropriados:
 
 ```php
-$httpClient = new \GuzzleHttp\Client([
-    'timeout' => 30,
-    'connect_timeout' => 5,
-]);
+[
+    'mode' => 'remote',
+    'endpoint' => 'http://permission-service:8000',
+    'timeout' => 30, // segundos
+]
 ```
 
-### 5. Monitoramento
+### 5. Headers Customizados
+
+Adicione headers para autenticação/autorização:
+
+```php
+[
+    'mode' => 'remote',
+    'endpoint' => 'http://permission-service:8000',
+    'headers' => [
+        'X-API-Key' => getenv('PERMISSION_API_KEY'),
+        'Authorization' => 'Bearer ' . getenv('SERVICE_TOKEN'),
+    ],
+]
+```
+
+### 6. Monitoramento
 
 Monitore comunicação entre microserviços:
-- Logar todas as requisições proxy
+- Logar todas as requisições remotas
 - Rastrear tempos de resposta
 - Alertar sobre falhas
 - Monitorar saúde dos serviços
@@ -354,7 +673,7 @@ Monitore comunicação entre microserviços:
 
 1. Criar entry point do microserviço
 2. Fazer deploy do microserviço
-3. Atualizar configuração da aplicação principal
+3. Atualizar configuração da aplicação principal (mudar `mode` para `remote`)
 4. Testar integração
 
 ### Fase 3: Otimização
@@ -379,29 +698,32 @@ return [
         
         // Microserviços remotos
         [
-            'type' => 'remote',
-            'name' => 'ProductCatalog',
-            'base_url' => getenv('PRODUCT_SERVICE_URL'),
-            'routes_prefix' => '/api/products',
+            'class' => \Metamorphose\Modules\Permission\Module::class,
+            'name' => 'permission',
+            'mode' => 'remote',
+            'endpoint' => getenv('PERMISSION_SERVICE_URL') ?: 'http://permission-service:8000',
+            'timeout' => 30,
         ],
         [
-            'type' => 'remote',
-            'name' => 'OrderManagement',
-            'base_url' => getenv('ORDER_SERVICE_URL'),
-            'routes_prefix' => '/api/orders',
+            'class' => \Metamorphose\Modules\Stock\Module::class,
+            'name' => 'stock',
+            'mode' => 'remote',
+            'endpoint' => getenv('STOCK_SERVICE_URL') ?: 'http://stock-service:8000',
+            'timeout' => 30,
         ],
     ],
 ];
 ```
 
-### Serviço de Produtos (`config/modules.php`)
+### Serviço de Permission (`config/modules.php`)
 
 ```php
 <?php
 
 return [
     'enabled' => [
-        \Metamorphose\Modules\ProductCatalog\Module::class,
+        // Apenas este módulo roda neste microserviço
+        \Metamorphose\Modules\Permission\Module::class,
     ],
 ];
 ```
@@ -417,17 +739,17 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - PRODUCT_SERVICE_URL=http://product-service:8000
-      - ORDER_SERVICE_URL=http://order-service:8000
+      - PERMISSION_SERVICE_URL=http://permission-service:8000
+      - STOCK_SERVICE_URL=http://stock-service:8000
   
-  product-service:
+  permission-service:
     build: .
     ports:
       - "8001:8000"
     environment:
       - APP_ENV=production
   
-  order-service:
+  stock-service:
     build: .
     ports:
       - "8002:8000"
@@ -442,25 +764,31 @@ services:
 - Verificar se a classe do módulo existe
 - Verificar namespace e autoloading
 - Garantir que módulo está no diretório correto
+- Verificar se módulo está habilitado em `config/modules.php`
 
 ### Conexão Recusada
 
 - Verificar se microserviço está rodando
-- Verificar se base_url está correto
+- Verificar se endpoint está correto
 - Verificar conectividade de rede
 - Revisar regras de firewall
 
 ### Contexto Não Preservado
 
-- Garantir que headers são encaminhados
+- Garantir que contexto é enviado no payload
+- Verificar que `ModuleExecuteController` aplica contexto corretamente
 - Verificar ordem dos middlewares
-- Verificar implementação do proxy
 - Revisar tratamento de requisição/resposta
+
+### Timeout
+
+- Aumentar timeout na configuração
+- Verificar performance do microserviço
+- Verificar latência de rede
+- Considerar implementar cache
 
 ## Próximos Passos
 
 - Leia sobre [Módulos](modules.md) para desenvolvimento de módulos
 - Aprenda sobre [Arquitetura](architecture.md) para design de sistema
 - Verifique [Contextos](contexts.md) para gerenciamento de contexto
-```
-

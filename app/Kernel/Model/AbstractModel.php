@@ -11,7 +11,7 @@ use Metamorphose\Kernel\Database\Query\QueryFilter;
 use Metamorphose\Kernel\Database\Transaction;
 
 /**
- * Model abstrato estilo Adianti Framework
+ * Model abstrato
  * 
  * Abstração sobre Doctrine DBAL (NÃO usa Doctrine ORM nem EntityManager)
  * Table-first, sem annotations ou attributes
