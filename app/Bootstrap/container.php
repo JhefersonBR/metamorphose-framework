@@ -25,7 +25,6 @@ function buildContainer(): Container
 {
     $builder = new ContainerBuilder();
     $builder->useAutowiring(true);
-    $builder->useAnnotations(false);
     
     $config = [
         'app' => require __DIR__ . '/../../config/app.php',

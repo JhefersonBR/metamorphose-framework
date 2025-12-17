@@ -12,6 +12,20 @@ use Slim\App;
  */
 function loadRoutes(App $app, ContainerInterface $container): void
 {
+    // Rota raiz - redireciona para Swagger ou mostra informações
+    $app->get('/', function ($request, $response) {
+        $response->getBody()->write(json_encode([
+            'message' => 'Metamorphose Framework API',
+            'version' => '1.0.0',
+            'endpoints' => [
+                'swagger_ui' => '/swagger-ui',
+                'swagger_json' => '/swagger.json',
+                'example' => '/example',
+            ],
+        ], JSON_PRETTY_PRINT));
+        return $response->withHeader('Content-Type', 'application/json');
+    });
+    
     // Registrar rotas do Swagger UI
     $swaggerJsonPath = __DIR__ . '/../../public/swagger.json';
     $swaggerUiPath = __DIR__ . '/../../public/swagger-ui';

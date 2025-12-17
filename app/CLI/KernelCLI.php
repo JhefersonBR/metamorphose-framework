@@ -4,8 +4,9 @@ namespace Metamorphose\CLI;
 
 use Metamorphose\CLI\Commands\MigrateCommand;
 use Metamorphose\CLI\Commands\ModuleMakeCommand;
-use Metamorphose\CLI\Commands\SwaggerGenerateCommand;
 use Metamorphose\CLI\Commands\ModuleRemoveCommand;
+use Metamorphose\CLI\Commands\ServeCommand;
+use Metamorphose\CLI\Commands\SwaggerGenerateCommand;
 
 /**
  * Kernel CLI
@@ -27,6 +28,7 @@ class KernelCLI
         $this->register(new ModuleRemoveCommand());
         $this->register(new MigrateCommand());
         $this->register(new SwaggerGenerateCommand());
+        $this->register(new ServeCommand());
     }
 
     public function register(CommandInterface $command): void

@@ -100,7 +100,13 @@ php bin/metamorphose migrate --scope=core
 ### Executar a Aplicação
 
 ```bash
-# Servidor PHP built-in (desenvolvimento)
+# Usando o comando serve (recomendado - gera Swagger automaticamente)
+php bin/metamorphose serve
+
+# Ou com porta customizada
+php bin/metamorphose serve --port=8080
+
+# Ou servidor PHP built-in manual
 php -S localhost:8000 -t public
 
 # Ou configure seu servidor web (Apache/Nginx)
@@ -110,6 +116,7 @@ php -S localhost:8000 -t public
 Acesse:
 - **API**: `http://localhost:8000`
 - **Swagger UI**: `http://localhost:8000/swagger-ui`
+- **Swagger JSON**: `http://localhost:8000/swagger.json`
 
 ## 📚 Documentação
 
@@ -202,6 +209,9 @@ php bin/metamorphose swagger:generate
 ## 🛠️ Comandos CLI Disponíveis
 
 ```bash
+# Iniciar servidor de desenvolvimento (com Swagger)
+php bin/metamorphose serve
+
 # Criar módulo
 php bin/metamorphose module:make NomeDoModulo
 

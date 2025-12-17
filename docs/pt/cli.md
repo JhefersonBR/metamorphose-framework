@@ -48,6 +48,46 @@ php bin/metamorphose module:make ProductCatalog
 3. Crie migrações se necessário
 4. Teste seu módulo
 
+### serve
+
+Inicia um servidor PHP local de desenvolvimento com a aplicação e Swagger UI.
+
+**Uso:**
+```bash
+php bin/metamorphose serve [opções]
+```
+
+**Opções:**
+- `--host=HOST` - Host do servidor (padrão: localhost)
+- `--port=PORT` - Porta do servidor (padrão: 8000)
+- `--no-swagger` - Não gerar documentação Swagger antes de iniciar
+
+**Exemplos:**
+```bash
+# Iniciar servidor na porta padrão (8000)
+php bin/metamorphose serve
+
+# Iniciar servidor em porta customizada
+php bin/metamorphose serve --port=8080
+
+# Iniciar servidor em host e porta customizados
+php bin/metamorphose serve --host=0.0.0.0 --port=8080
+
+# Iniciar sem gerar Swagger
+php bin/metamorphose serve --no-swagger
+```
+
+**O que faz:**
+1. Gera documentação Swagger (a menos que `--no-swagger` seja usado)
+2. Inicia servidor PHP built-in
+3. Serve aplicação do diretório `public/`
+4. Mostra URLs para:
+   - Aplicação: `http://localhost:8000`
+   - Swagger UI: `http://localhost:8000/swagger-ui`
+   - Swagger JSON: `http://localhost:8000/swagger.json`
+
+**Nota:** Pressione `Ctrl+C` para parar o servidor.
+
 ### migrate
 
 Executa migrações de banco de dados para um escopo específico.

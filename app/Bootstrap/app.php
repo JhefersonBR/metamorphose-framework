@@ -12,6 +12,13 @@ use Slim\Factory\AppFactory;
 function createApp(ContainerInterface $container): App
 {
     AppFactory::setContainer($container);
-    return AppFactory::create();
+    $app = AppFactory::create();
+    
+    // Adicionar error handler customizado
+    $errorMiddleware = $app->addErrorMiddleware(true, true, true);
+    $errorHandler = $errorMiddleware->getDefaultErrorHandler();
+    $errorHandler->forceContentType('application/json');
+    
+    return $app;
 }
 
