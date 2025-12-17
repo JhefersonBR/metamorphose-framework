@@ -17,6 +17,7 @@ Welcome to the Metamorphose Framework documentation. This documentation is avail
 - [Database](en/database.md)
 - [Logging](en/logging.md)
 - [Permissions](en/permissions.md)
+- [Swagger](en/swagger.md)
 
 ### Português
 - [Guia de Instalação](pt/installation.md)
@@ -28,4 +29,5 @@ Welcome to the Metamorphose Framework documentation. This documentation is avail
 - [Banco de Dados](pt/database.md)
 - [Logs](pt/logging.md)
 - [Permissões](pt/permissions.md)
+- [Swagger](pt/swagger.md)
 

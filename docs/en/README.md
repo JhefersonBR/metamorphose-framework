@@ -14,6 +14,7 @@ Metamorphose Framework is a modular, multi-tenant PHP application kernel based o
 8. [Logging](logging.md)
 9. [Permissions](permissions.md)
 10. [Microservices](microservices.md)
+11. [Swagger](swagger.md)
 
 ## Overview
 
