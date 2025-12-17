@@ -1,6 +1,8 @@
 /vendor/
 /node_modules/
-/storage/
+/storage/*
+!/storage/.gitkeep
+/storage/database.sqlite
 *.log
 .env
 .env.local

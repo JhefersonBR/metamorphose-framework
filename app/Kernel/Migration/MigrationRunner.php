@@ -80,11 +80,22 @@ class MigrationRunner
 
     private function ensureMigrationsTable(PDO $connection): void
     {
-        $sql = "CREATE TABLE IF NOT EXISTS migrations (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            migration VARCHAR(255) NOT NULL UNIQUE,
-            executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+        // Detectar se é SQLite pelo driver
+        $driver = $connection->getAttribute(PDO::ATTR_DRIVER_NAME);
+        
+        if ($driver === 'sqlite') {
+            $sql = "CREATE TABLE IF NOT EXISTS migrations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                migration VARCHAR(255) NOT NULL UNIQUE,
+                executed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )";
+        } else {
+            $sql = "CREATE TABLE IF NOT EXISTS migrations (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                migration VARCHAR(255) NOT NULL UNIQUE,
+                executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+        }
         
         $connection->exec($sql);
     }
@@ -150,9 +161,21 @@ class MigrationRunner
 
     private function getMigrationClassName(string $migrationName): string
     {
+        // Converte snake_case para PascalCase mantendo números
+        // Exemplo: 0001_create_users_table -> Migration0001CreateUsersTable
         $parts = explode('_', $migrationName);
-        $parts = array_map('ucfirst', $parts);
-        return implode('', $parts);
+        $parts = array_map(function($part) {
+            // Se for numérico, mantém como está, senão capitaliza
+            return is_numeric($part) ? $part : ucfirst($part);
+        }, $parts);
+        $className = implode('', $parts);
+        
+        // Adiciona prefixo Migration se não começar com ele
+        if (!str_starts_with($className, 'Migration')) {
+            $className = 'Migration' . $className;
+        }
+        
+        return $className;
     }
 }
 

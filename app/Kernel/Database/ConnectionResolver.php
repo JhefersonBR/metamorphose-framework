@@ -78,6 +78,18 @@ class ConnectionResolver implements ConnectionResolverInterface
 
     private function createConnection(array $config): PDO
     {
+        // Suporte para SQLite
+        if ($config['driver'] === 'sqlite') {
+            $dsn = 'sqlite:' . $config['database'];
+            $options = [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            ];
+            
+            return new PDO($dsn, null, null, $options);
+        }
+        
+        // MySQL/MariaDB
         $dsn = sprintf(
             '%s:host=%s;port=%d;dbname=%s;charset=%s',
             $config['driver'],

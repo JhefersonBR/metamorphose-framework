@@ -2,10 +2,10 @@
 
 return [
     'core' => [
-        'driver' => getenv('DB_CORE_DRIVER') ?: 'mysql',
+        'driver' => getenv('DB_CORE_DRIVER') ?: 'sqlite',
         'host' => getenv('DB_CORE_HOST') ?: 'localhost',
         'port' => getenv('DB_CORE_PORT') ?: 3306,
-        'database' => getenv('DB_CORE_DATABASE') ?: 'metamorphose_core',
+        'database' => getenv('DB_CORE_DATABASE') ?: __DIR__ . '/../storage/database.sqlite',
         'username' => getenv('DB_CORE_USERNAME') ?: 'root',
         'password' => getenv('DB_CORE_PASSWORD') ?: '',
         'charset' => 'utf8mb4',
