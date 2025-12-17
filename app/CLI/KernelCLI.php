@@ -2,6 +2,7 @@
 
 namespace Metamorphose\CLI;
 
+use Metamorphose\CLI\Commands\LogClearCommand;
 use Metamorphose\CLI\Commands\MigrateCommand;
 use Metamorphose\CLI\Commands\ModuleMakeCommand;
 use Metamorphose\CLI\Commands\ModuleRemoveCommand;
@@ -31,6 +32,7 @@ class KernelCLI
         $this->register(new SwaggerGenerateCommand());
         $this->register(new ServeCommand());
         $this->register(new TestCommand());
+        $this->register(new LogClearCommand());
     }
 
     public function register(CommandInterface $command): void

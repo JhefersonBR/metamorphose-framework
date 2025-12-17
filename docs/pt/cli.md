@@ -128,6 +128,60 @@ vendor/bin/phpunit
 composer test
 ```
 
+### log:clear
+
+Remove arquivos de log antigos ou todos os logs do sistema.
+
+**Uso:**
+```bash
+php bin/metamorphose log:clear [opções]
+```
+
+**Opções:**
+- `--days=N` - Remove logs mais antigos que N dias (padrão: 7 dias)
+- `--all` - Remove todos os arquivos de log
+- `-y` ou `--yes` - Confirmação automática (não pergunta)
+
+**Exemplos:**
+```bash
+# Remover logs mais antigos que 7 dias (padrão)
+php bin/metamorphose log:clear
+
+# Remover logs mais antigos que 30 dias
+php bin/metamorphose log:clear --days=30
+
+# Remover todos os logs (com confirmação)
+php bin/metamorphose log:clear --all
+
+# Remover todos os logs sem confirmação
+php bin/metamorphose log:clear --all -y
+
+# Remover logs antigos sem confirmação
+php bin/metamorphose log:clear --days=14 -y
+```
+
+**O que faz:**
+1. Escaneia o diretório de logs configurado em `config/log.php`
+2. Lista arquivos de log encontrados
+3. Remove logs conforme as opções especificadas:
+   - Com `--days=N`: Remove apenas logs mais antigos que N dias
+   - Com `--all`: Remove todos os arquivos de log
+4. Mostra estatísticas de arquivos removidos (quantidade e tamanho)
+
+**Exemplo de saída:**
+```
+Found 5 log file(s) older than 7 day(s) (2.5 MB)
+  - 2025-12-10.log (2025-12-10, 512.5 KB)
+  - 2025-12-11.log (2025-12-11, 1.2 MB)
+  - 2025-12-12.log (2025-12-12, 786.3 KB)
+
+Are you sure you want to delete these files? (yes/no): yes
+
+✅ Successfully deleted 3 file(s) (2.5 MB)
+```
+
+**Nota:** O diretório de logs é configurado em `config/log.php` através da opção `path`.
+
 ### migrate
 
 Executa migrações de banco de dados para um escopo específico.
