@@ -1,0 +1,339 @@
+# Comandos CLI
+
+O Metamorphose Framework inclui uma interface de linha de comando (CLI) para tarefas comuns como criar módulos e executar migrações.
+
+## Uso
+
+```bash
+php bin/metamorphose [comando] [opções]
+```
+
+Ou use o atalho:
+
+```bash
+php bin/migrate [opções]  # Atalho para o comando migrate
+```
+
+## Comandos Disponíveis
+
+### module:make
+
+Cria um novo módulo com a estrutura completa de diretórios.
+
+**Uso:**
+```bash
+php bin/metamorphose module:make NomeDoModulo
+```
+
+**Exemplo:**
+```bash
+php bin/metamorphose module:make ProductCatalog
+```
+
+**O que cria:**
+- `app/Modules/ProductCatalog/Module.php` - Classe principal do módulo
+- `app/Modules/ProductCatalog/Routes.php` - Arquivo de rotas
+- `app/Modules/ProductCatalog/config.php` - Configuração do módulo
+- `app/Modules/ProductCatalog/Controller/ProductCatalogController.php` - Controller de exemplo
+- `app/Modules/ProductCatalog/Service/` - Diretório de serviços
+- `app/Modules/ProductCatalog/Repository/` - Diretório de repositories
+- `app/Modules/ProductCatalog/Entity/` - Diretório de entidades
+- `app/Modules/ProductCatalog/Migrations/core/` - Diretório de migrações core
+- `app/Modules/ProductCatalog/Migrations/tenant/` - Diretório de migrações tenant
+- `app/Modules/ProductCatalog/Migrations/unit/` - Diretório de migrações unit
+
+**Após a criação:**
+1. Registre o módulo em `config/modules.php`
+2. Implemente sua lógica de negócio
+3. Crie migrações se necessário
+4. Teste seu módulo
+
+### migrate
+
+Executa migrações de banco de dados para um escopo específico.
+
+**Uso:**
+```bash
+php bin/metamorphose migrate --scope=core
+php bin/metamorphose migrate --scope=tenant
+php bin/metamorphose migrate --scope=unit
+```
+
+**Atalho:**
+```bash
+php bin/migrate --scope=core
+```
+
+**Opções:**
+- `--scope=core`: Executa migrações de escopo core
+- `--scope=tenant`: Executa migrações de escopo tenant
+- `--scope=unit`: Executa migrações de escopo unit
+
+**Como funciona:**
+1. Escaneia todos os módulos habilitados para migrações no escopo especificado
+2. Verifica quais migrações já foram executadas
+3. Executa migrações pendentes em ordem
+4. Registra migrações executadas na tabela `migrations`
+
+**Exemplo de saída:**
+```
+Migrações executadas com sucesso para o escopo: core
+```
+
+**Tratamento de erros:**
+- Se uma migração falhar, ela faz rollback da transação
+- Migrações anteriores permanecem executadas
+- Verifique a mensagem de erro para detalhes
+
+## Criando Comandos Personalizados
+
+Você pode criar comandos CLI personalizados implementando `CommandInterface`:
+
+### Passo 1: Criar Classe de Comando
+
+Crie `app/CLI/Commands/SeuComando.php`:
+
+```php
+<?php
+
+namespace Metamorphose\CLI\Commands;
+
+use Metamorphose\CLI\CommandInterface;
+
+class SeuComando implements CommandInterface
+{
+    public function name(): string
+    {
+        return 'seu:comando';
+    }
+
+    public function description(): string
+    {
+        return 'Descrição do seu comando';
+    }
+
+    public function handle(array $args): int
+    {
+        // Sua lógica de comando aqui
+        echo "Comando executado!\n";
+        return 0; // 0 = sucesso, 1+ = erro
+    }
+}
+```
+
+### Passo 2: Registrar Comando
+
+Edite `app/CLI/KernelCLI.php`:
+
+```php
+use Metamorphose\CLI\Commands\SeuComando;
+
+private function registerDefaultCommands(): void
+{
+    $this->register(new ModuleMakeCommand());
+    $this->register(new MigrateCommand());
+    $this->register(new SeuComando()); // Adicione seu comando
+}
+```
+
+### Passo 3: Usar Seu Comando
+
+```bash
+php bin/metamorphose seu:comando
+```
+
+## Interface de Comando
+
+Todos os comandos devem implementar `CommandInterface`:
+
+```php
+interface CommandInterface
+{
+    /**
+     * Nome do comando (ex: 'module:make')
+     */
+    public function name(): string;
+    
+    /**
+     * Descrição do comando
+     */
+    public function description(): string;
+    
+    /**
+     * Executar o comando
+     * 
+     * @param array $args Argumentos do comando
+     * @return int Código de saída (0 = sucesso, 1+ = erro)
+     */
+    public function handle(array $args): int;
+}
+```
+
+## Argumentos de Comando
+
+Comandos recebem argumentos como um array:
+
+```php
+public function handle(array $args): int
+{
+    // $args[0] = primeiro argumento
+    // $args[1] = segundo argumento
+    // etc.
+    
+    if (empty($args[0])) {
+        echo "Erro: Argumento obrigatório\n";
+        return 1;
+    }
+    
+    $value = $args[0];
+    // Processar...
+    
+    return 0;
+}
+```
+
+## Analisando Opções
+
+Para analisar opções como `--scope=core`:
+
+```php
+private function parseScope(array $args): ?string
+{
+    foreach ($args as $arg) {
+        if (str_starts_with($arg, '--scope=')) {
+            return substr($arg, 8);
+        }
+    }
+    
+    return null;
+}
+```
+
+## Códigos de Saída
+
+- `0`: Sucesso
+- `1` ou superior: Erro
+
+Use códigos de saída apropriados para indicar sucesso ou falha:
+
+```php
+public function handle(array $args): int
+{
+    try {
+        // Fazer algo
+        return 0; // Sucesso
+    } catch (\Exception $e) {
+        echo "Erro: " . $e->getMessage() . "\n";
+        return 1; // Erro
+    }
+}
+```
+
+## Comando de Ajuda
+
+Para mostrar comandos disponíveis:
+
+```bash
+php bin/metamorphose
+```
+
+Isso exibe:
+```
+Metamorphose Framework CLI
+==========================
+
+Comandos disponíveis:
+
+  module:make          Cria um novo módulo
+  migrate              Executa migrações de banco de dados (--scope=core|tenant|unit)
+```
+
+## Melhores Práticas
+
+1. **Validar argumentos**: Verificar argumentos obrigatórios antes de processar
+2. **Fornecer erros claros**: Usar mensagens de erro descritivas
+3. **Retornar códigos apropriados**: 0 para sucesso, 1+ para erros
+4. **Tratar exceções**: Capturar e exibir erros graciosamente
+5. **Documentar seu comando**: Adicionar comentários explicando o que o comando faz
+
+## Exemplos
+
+### Exemplo: Comando de Limpar Cache
+
+```php
+<?php
+
+namespace Metamorphose\CLI\Commands;
+
+use Metamorphose\CLI\CommandInterface;
+
+class CacheClearCommand implements CommandInterface
+{
+    public function name(): string
+    {
+        return 'cache:clear';
+    }
+
+    public function description(): string
+    {
+        return 'Limpar cache da aplicação';
+    }
+
+    public function handle(array $args): int
+    {
+        $cachePath = __DIR__ . '/../../storage/cache';
+        
+        if (!is_dir($cachePath)) {
+            echo "Diretório de cache não encontrado\n";
+            return 1;
+        }
+        
+        $files = glob($cachePath . '/*');
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
+        
+        echo "Cache limpo com sucesso\n";
+        return 0;
+    }
+}
+```
+
+### Exemplo: Comando de Listar Módulos
+
+```php
+<?php
+
+namespace Metamorphose\CLI\Commands;
+
+use Metamorphose\CLI\CommandInterface;
+
+class ModuleListCommand implements CommandInterface
+{
+    public function name(): string
+    {
+        return 'module:list';
+    }
+
+    public function description(): string
+    {
+        return 'Listar todos os módulos habilitados';
+    }
+
+    public function handle(array $args): int
+    {
+        $config = require __DIR__ . '/../../../config/modules.php';
+        $modules = $config['enabled'] ?? [];
+        
+        echo "Módulos habilitados:\n\n";
+        foreach ($modules as $module) {
+            echo "  - {$module}\n";
+        }
+        
+        return 0;
+    }
+}
+```
+

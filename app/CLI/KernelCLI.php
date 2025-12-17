@@ -1,0 +1,66 @@
+<?php
+
+namespace Metamorphose\CLI;
+
+use Metamorphose\CLI\Commands\MigrateCommand;
+use Metamorphose\CLI\Commands\ModuleMakeCommand;
+
+/**
+ * Kernel CLI
+ * 
+ * Registra e executa comandos CLI do framework.
+ */
+class KernelCLI
+{
+    private array $commands = [];
+
+    public function __construct()
+    {
+        $this->registerDefaultCommands();
+    }
+
+    private function registerDefaultCommands(): void
+    {
+        $this->register(new ModuleMakeCommand());
+        $this->register(new MigrateCommand());
+    }
+
+    public function register(CommandInterface $command): void
+    {
+        $this->commands[$command->name()] = $command;
+    }
+
+    public function run(array $argv): int
+    {
+        if (count($argv) < 2) {
+            $this->showHelp();
+            return 1;
+        }
+
+        $commandName = $argv[1];
+        $args = array_slice($argv, 2);
+
+        if (!isset($this->commands[$commandName])) {
+            echo "Comando não encontrado: {$commandName}\n";
+            $this->showHelp();
+            return 1;
+        }
+
+        $command = $this->commands[$commandName];
+        return $command->handle($args);
+    }
+
+    private function showHelp(): void
+    {
+        echo "Metamorphose Framework CLI\n";
+        echo "==========================\n\n";
+        echo "Comandos disponíveis:\n\n";
+        
+        foreach ($this->commands as $command) {
+            echo sprintf("  %-20s %s\n", $command->name(), $command->description());
+        }
+        
+        echo "\n";
+    }
+}
+

@@ -1,0 +1,11 @@
+#!/usr/bin/env php
+<?php
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use Metamorphose\CLI\KernelCLI;
+
+$cli = new KernelCLI();
+$argv[0] = 'migrate';
+exit($cli->run($argv));
+
