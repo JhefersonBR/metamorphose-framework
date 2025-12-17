@@ -19,7 +19,7 @@ class ServeCommand implements CommandInterface
 
     public function description(): string
     {
-        return 'Inicia servidor PHP local com aplicação e Swagger';
+        return 'Starts local PHP server with application and Swagger';
     }
 
     public function handle(array $args): int
@@ -31,13 +31,13 @@ class ServeCommand implements CommandInterface
         $publicPath = __DIR__ . '/../../../public';
         
         if (!is_dir($publicPath)) {
-            echo "❌ Erro: Diretório public não encontrado\n";
+            echo "❌ Error: public directory not found\n";
             return 1;
         }
 
-        // Gerar documentação Swagger se necessário
+        // Generate Swagger documentation if necessary
         if ($generateSwagger) {
-            echo "📝 Gerando documentação Swagger...\n";
+            echo "📝 Generating Swagger documentation...\n";
             $this->generateSwagger();
         }
 
@@ -45,13 +45,13 @@ class ServeCommand implements CommandInterface
         $url = "http://{$address}";
         
         echo "\n";
-        echo "🚀 Metamorphose Framework - Servidor de Desenvolvimento\n";
-        echo "========================================================\n\n";
-        echo "📍 Servidor rodando em: {$url}\n";
+        echo "🚀 Metamorphose Framework - Development Server\n";
+        echo "===============================================\n\n";
+        echo "📍 Server running at: {$url}\n";
         echo "📚 Swagger UI: {$url}/swagger-ui\n";
         echo "📄 Swagger JSON: {$url}/swagger.json\n";
         echo "\n";
-        echo "⚠️  Pressione Ctrl+C para parar o servidor\n";
+        echo "⚠️  Press Ctrl+C to stop the server\n";
         echo "\n";
 
         // Iniciar servidor PHP
@@ -87,13 +87,13 @@ class ServeCommand implements CommandInterface
             $generator->addScanPath(__DIR__ . '/../../Kernel');
             
             if ($generator->generate()) {
-                echo "✅ Documentação Swagger gerada\n";
+                echo "✅ Swagger documentation generated\n";
             } else {
-                echo "⚠️  Aviso: Não foi possível gerar documentação Swagger\n";
+                echo "⚠️  Warning: Could not generate Swagger documentation\n";
             }
         } catch (\Exception $e) {
-            echo "⚠️  Aviso: Erro ao gerar Swagger: " . $e->getMessage() . "\n";
-            echo "   Você pode gerar manualmente com: php bin/metamorphose swagger:generate\n";
+            echo "⚠️  Warning: Error generating Swagger: " . $e->getMessage() . "\n";
+            echo "   You can generate manually with: php bin/metamorphose swagger:generate\n";
         }
     }
 }

@@ -21,67 +21,68 @@ class ModuleRemoveCommand implements CommandInterface
 
     public function description(): string
     {
-        return 'Remove um módulo completamente';
+        return 'Completely removes a module';
     }
 
     public function handle(array $args): int
     {
         if (empty($args[0])) {
-            echo "Erro: Nome do módulo é obrigatório\n";
-            echo "Uso: module:remove {Nome}\n";
+            echo "Error: Module name is required\n";
+            echo "Usage: module:remove {Name} [-y]\n";
             return 1;
         }
 
         $moduleName = $args[0];
+        $autoConfirm = in_array('-y', $args) || in_array('--yes', $args);
         $modulePath = __DIR__ . '/../../Modules/' . $moduleName;
         
         if (!is_dir($modulePath)) {
-            echo "Erro: Módulo '{$moduleName}' não existe\n";
+            echo "Error: Module '{$moduleName}' does not exist\n";
             return 1;
         }
 
         $className = $this->toClassName($moduleName);
         $moduleClass = "\\Metamorphose\\Modules\\{$className}\\Module";
 
-        // Verificar se está registrado em config/modules.php
+        // Check if registered in config/modules.php
         $isRegistered = $this->isRegisteredInConfig($moduleClass);
         
-        // Mostrar informações do módulo
-        echo "\n⚠️  ATENÇÃO: Você está prestes a remover o módulo '{$moduleName}'\n\n";
-        echo "Informações:\n";
-        echo "  - Caminho: {$modulePath}\n";
+        // Show module information
+        echo "\n⚠️  WARNING: You are about to remove module '{$moduleName}'\n\n";
+        echo "Information:\n";
+        echo "  - Path: {$modulePath}\n";
         if ($isRegistered) {
-            echo "  - Status: Registrado em config/modules.php\n";
+            echo "  - Status: Registered in config/modules.php\n";
         } else {
-            echo "  - Status: Não registrado em config/modules.php\n";
+            echo "  - Status: Not registered in config/modules.php\n";
         }
-        echo "\nEsta ação irá:\n";
-        echo "  - Remover o módulo de config/modules.php (se registrado)\n";
-        echo "  - Excluir permanentemente a pasta do módulo\n";
-        echo "  - Atualizar o autoloader do Composer\n";
+        echo "\nThis action will:\n";
+        echo "  - Remove module from config/modules.php (if registered)\n";
+        echo "  - Permanently delete the module folder\n";
+        echo "  - Update Composer autoloader\n";
         echo "\n";
 
-        // Solicitar confirmação
-        if (!$this->confirm("Tem certeza que deseja remover o módulo '{$moduleName}'? (sim/não): ")) {
-            echo "Operação cancelada.\n";
+        // Request confirmation (skip if -y flag is present)
+        if (!$autoConfirm && !$this->confirm("Are you sure you want to remove module '{$moduleName}'? (yes/no): ")) {
+            echo "Operation cancelled.\n";
             return 0;
         }
 
-        // 1. Remover de config/modules.php se estiver registrado
+        // 1. Remove from config/modules.php if registered
         $removedFromConfig = $this->removeFromConfig($moduleClass);
         
-        // 2. Excluir pasta do módulo
+        // 2. Delete module folder
         $this->removeDirectory($modulePath);
         
-        // 3. Executar composer dump-autoload
+        // 3. Execute composer dump-autoload
         $this->dumpAutoload();
 
-        echo "\n✅ Módulo '{$moduleName}' removido com sucesso!\n";
+        echo "\n✅ Module '{$moduleName}' removed successfully!\n";
         if ($removedFromConfig) {
-            echo "  - Removido de config/modules.php\n";
+            echo "  - Removed from config/modules.php\n";
         }
-        echo "  - Pasta excluída: {$modulePath}\n";
-        echo "  - Autoloader atualizado\n";
+        echo "  - Folder deleted: {$modulePath}\n";
+        echo "  - Autoloader updated\n";
         
         return 0;
     }
@@ -97,7 +98,21 @@ class ModuleRemoveCommand implements CommandInterface
         $config = require $configPath;
         $enabled = $config['enabled'] ?? [];
         
-        return in_array($moduleClass, $enabled);
+        // When PHP loads the config file, ::class is evaluated and returns the full class name
+        // So we need to compare the actual class name, not the string with ::class
+        foreach ($enabled as $enabledModule) {
+            if (is_string($enabledModule)) {
+                // Normalize both strings for comparison (remove leading backslash and ::class)
+                $normalizedEnabled = ltrim(str_replace('::class', '', $enabledModule), '\\');
+                $normalizedModule = ltrim($moduleClass, '\\');
+                
+                if ($normalizedEnabled === $normalizedModule) {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
     }
 
     private function confirm(string $prompt): bool
@@ -108,7 +123,7 @@ class ModuleRemoveCommand implements CommandInterface
         fclose($handle);
 
         $answer = strtolower($line);
-        return in_array($answer, ['sim', 's', 'yes', 'y', '1']);
+        return in_array($answer, ['yes', 'y', '1']);
     }
 
     private function removeFromConfig(string $moduleClass): bool
@@ -119,25 +134,44 @@ class ModuleRemoveCommand implements CommandInterface
             return false;
         }
 
+        // Load config to check if module exists
         $config = require $configPath;
         $enabled = $config['enabled'] ?? [];
         
-        // Verificar se o módulo está na lista
-        $key = array_search($moduleClass, $enabled);
+        // Find the module in the list
+        // When PHP loads the config file, ::class is evaluated and returns the full class name
+        // Example: \Metamorphose\Modules\Example\Module::class becomes "Metamorphose\Modules\Example\Module"
+        $key = false;
+        $normalizedModule = ltrim($moduleClass, '\\');
+        
+        foreach ($enabled as $index => $enabledModule) {
+            if (is_string($enabledModule)) {
+                // Normalize: remove leading backslash (PHP returns class name without it)
+                $normalizedEnabled = ltrim($enabledModule, '\\');
+                
+                if ($normalizedEnabled === $normalizedModule) {
+                    $key = $index;
+                    break;
+                }
+            }
+        }
+        
         if ($key === false) {
+            // Module not found in config
             return false;
         }
 
-        // Remover da lista
+        // Remove from list
         unset($enabled[$key]);
-        $enabled = array_values($enabled); // Reindexar array
+        $enabled = array_values($enabled); // Reindex array
 
-        // Reescrever arquivo de configuração
+        // Rewrite configuration file
         $content = "<?php\n\nreturn [\n    'enabled' => [\n";
         
         foreach ($enabled as $module) {
             if (is_string($module)) {
-                $content .= "        {$module}::class,\n";
+                // Always write with ::class format
+                $content .= "        \\{$module}::class,\n";
             } elseif (is_array($module)) {
                 $content .= "        [\n";
                 foreach ($module as $key => $value) {
@@ -155,8 +189,8 @@ class ModuleRemoveCommand implements CommandInterface
         
         $content .= "    ],\n];\n";
 
-        file_put_contents($configPath, $content);
-        return true;
+        $result = file_put_contents($configPath, $content);
+        return $result !== false;
     }
 
     private function removeDirectory(string $dir): void
@@ -196,8 +230,8 @@ class ModuleRemoveCommand implements CommandInterface
         exec($command . ' 2>&1', $output, $returnVar);
         
         if ($returnVar !== 0) {
-            echo "Aviso: Não foi possível executar 'composer dump-autoload'\n";
-            echo "Execute manualmente: composer dump-autoload\n";
+            echo "Warning: Could not execute 'composer dump-autoload'\n";
+            echo "Run manually: composer dump-autoload\n";
         }
     }
 

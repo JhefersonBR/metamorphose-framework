@@ -19,7 +19,7 @@ class SwaggerGenerateCommand implements CommandInterface
 
     public function description(): string
     {
-        return 'Gera/atualiza a documentação Swagger baseada nas APIs';
+        return 'Generates/updates Swagger documentation based on APIs';
     }
 
     public function handle(array $args): int
@@ -27,27 +27,27 @@ class SwaggerGenerateCommand implements CommandInterface
         $outputPath = __DIR__ . '/../../../public/swagger.json';
         $scanPath = __DIR__ . '/../../Modules';
 
-        echo "Gerando documentação Swagger...\n";
-        echo "Escaneando: {$scanPath}\n";
-        echo "Saída: {$outputPath}\n\n";
+        echo "Generating Swagger documentation...\n";
+        echo "Scanning: {$scanPath}\n";
+        echo "Output: {$outputPath}\n\n";
 
         try {
             $generator = new SwaggerGenerator($scanPath, $outputPath);
             
-            // Adicionar caminhos adicionais se necessário
+            // Add additional paths if necessary
             $generator->addScanPath(__DIR__ . '/../../Kernel');
             
             if ($generator->generate()) {
-                echo "✅ Documentação Swagger gerada com sucesso!\n";
-                echo "Arquivo: {$outputPath}\n";
-                echo "\nAcesse: http://localhost/swagger-ui para visualizar\n";
+                echo "✅ Swagger documentation generated successfully!\n";
+                echo "File: {$outputPath}\n";
+                echo "\nAccess: http://localhost/swagger-ui to view\n";
                 return 0;
             } else {
-                echo "❌ Erro ao gerar documentação Swagger\n";
+                echo "❌ Error generating Swagger documentation\n";
                 return 1;
             }
         } catch (\Exception $e) {
-            echo "❌ Erro: " . $e->getMessage() . "\n";
+            echo "❌ Error: " . $e->getMessage() . "\n";
             return 1;
         }
     }

@@ -22,14 +22,14 @@ class ModuleMakeCommand implements CommandInterface
 
     public function description(): string
     {
-        return 'Cria um novo módulo';
+        return 'Creates a new module';
     }
 
     public function handle(array $args): int
     {
         if (empty($args[0])) {
-            echo "Erro: Nome do módulo é obrigatório\n";
-            echo "Uso: module:make {Nome}\n";
+            echo "Error: Module name is required\n";
+            echo "Usage: module:make {Name}\n";
             return 1;
         }
 
@@ -37,7 +37,7 @@ class ModuleMakeCommand implements CommandInterface
         $modulePath = __DIR__ . '/../../Modules/' . $moduleName;
         
         if (is_dir($modulePath)) {
-            echo "Erro: Módulo '{$moduleName}' já existe\n";
+            echo "Error: Module '{$moduleName}' already exists\n";
             return 1;
         }
 
@@ -48,8 +48,16 @@ class ModuleMakeCommand implements CommandInterface
         $this->createControllerFile($modulePath, $moduleName);
         $this->createDirectories($modulePath);
 
-        echo "Módulo '{$moduleName}' criado com sucesso!\n";
-        echo "Caminho: {$modulePath}\n";
+        // Add module to config/modules.php
+        $className = $this->toClassName($moduleName);
+        $moduleClass = "\\Metamorphose\\Modules\\{$className}\\Module";
+        $addedToConfig = $this->addToConfig($moduleClass);
+
+        echo "Module '{$moduleName}' created successfully!\n";
+        echo "Path: {$modulePath}\n";
+        if ($addedToConfig) {
+            echo "  - Added to config/modules.php\n";
+        }
         
         return 0;
     }
@@ -219,6 +227,64 @@ PHP;
     private function toClassName(string $name): string
     {
         return str_replace(' ', '', ucwords(str_replace(['-', '_'], ' ', $name)));
+    }
+
+    private function addToConfig(string $moduleClass): bool
+    {
+        $configPath = __DIR__ . '/../../../config/modules.php';
+        
+        if (!file_exists($configPath)) {
+            return false;
+        }
+
+        $config = require $configPath;
+        $enabled = $config['enabled'] ?? [];
+        
+        // Check if module is already in the list
+        $moduleClassWithClass = $moduleClass . '::class';
+        foreach ($enabled as $enabledModule) {
+            if (is_string($enabledModule)) {
+                $cleanModule = str_replace('::class', '', $enabledModule);
+                if ($cleanModule === $moduleClass || $enabledModule === $moduleClass || $enabledModule === $moduleClassWithClass) {
+                    // Already registered
+                    return false;
+                }
+            }
+        }
+
+        // Add to list
+        $enabled[] = $moduleClassWithClass;
+
+        // Rewrite configuration file
+        $content = "<?php\n\nreturn [\n    'enabled' => [\n";
+        
+        foreach ($enabled as $module) {
+            if (is_string($module)) {
+                // If already contains ::class, use directly, otherwise add
+                if (str_ends_with($module, '::class')) {
+                    $content .= "        {$module},\n";
+                } else {
+                    $content .= "        \\{$module}::class,\n";
+                }
+            } elseif (is_array($module)) {
+                $content .= "        [\n";
+                foreach ($module as $key => $value) {
+                    if (is_string($value)) {
+                        $content .= "            '{$key}' => '{$value}',\n";
+                    } elseif (is_bool($value)) {
+                        $content .= "            '{$key}' => " . ($value ? 'true' : 'false') . ",\n";
+                    } elseif (is_null($value)) {
+                        $content .= "            '{$key}' => null,\n";
+                    }
+                }
+                $content .= "        ],\n";
+            }
+        }
+        
+        $content .= "    ],\n];\n";
+
+        file_put_contents($configPath, $content);
+        return true;
     }
 }
 

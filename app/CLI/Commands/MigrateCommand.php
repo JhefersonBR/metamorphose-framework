@@ -26,7 +26,7 @@ class MigrateCommand implements CommandInterface
 
     public function description(): string
     {
-        return 'Executa migrações de banco de dados (--scope=core|tenant|unit)';
+        return 'Runs database migrations (--scope=core|tenant|unit)';
     }
 
     public function handle(array $args): int
@@ -34,22 +34,22 @@ class MigrateCommand implements CommandInterface
         $scope = $this->parseScope($args);
         
         if ($scope === null) {
-            echo "Erro: Escopo é obrigatório\n";
-            echo "Uso: migrate --scope=core|tenant|unit\n";
+            echo "Error: Scope is required\n";
+            echo "Usage: migrate --scope=core|tenant|unit\n";
             return 1;
         }
 
         if (!in_array($scope, ['core', 'tenant', 'unit'])) {
-            echo "Erro: Escopo inválido. Use: core, tenant ou unit\n";
+            echo "Error: Invalid scope. Use: core, tenant or unit\n";
             return 1;
         }
 
         try {
             $this->runMigrations($scope);
-            echo "Migrações executadas com sucesso para o escopo: {$scope}\n";
+            echo "Migrations executed successfully for scope: {$scope}\n";
             return 0;
         } catch (\Exception $e) {
-            echo "Erro ao executar migrações: " . $e->getMessage() . "\n";
+            echo "Error executing migrations: " . $e->getMessage() . "\n";
             return 1;
         }
     }

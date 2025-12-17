@@ -47,7 +47,7 @@ class KernelCLI
         $args = array_slice($argv, 2);
 
         if (!isset($this->commands[$commandName])) {
-            echo "Comando não encontrado: {$commandName}\n";
+            echo "Command not found: {$commandName}\n";
             $this->showHelp();
             return 1;
         }
@@ -60,7 +60,7 @@ class KernelCLI
     {
         echo "Metamorphose Framework CLI\n";
         echo "==========================\n\n";
-        echo "Comandos disponíveis:\n\n";
+        echo "Available commands:\n\n";
         
         foreach ($this->commands as $command) {
             echo sprintf("  %-20s %s\n", $command->name(), $command->description());

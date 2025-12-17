@@ -5,4 +5,3 @@ return [
         \Metamorphose\Modules\Example\Module::class,
     ],
 ];
-
