@@ -2,6 +2,14 @@
 
 Kernel de aplicação PHP modular e multi-tenant baseado em Slim Framework.
 
+## Documentação
+
+📚 **Documentação completa disponível em:**
+- [Português](docs/pt/README.md)
+- [English](docs/en/README.md)
+
+A documentação inclui guias detalhados sobre instalação, arquitetura, módulos, CLI, contextos, banco de dados, logs e permissões.
+
 ## Requisitos
 
 - PHP >= 8.1

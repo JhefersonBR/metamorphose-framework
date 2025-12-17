@@ -13,6 +13,7 @@ Metamorphose Framework is a modular, multi-tenant PHP application kernel based o
 7. [Database](database.md)
 8. [Logging](logging.md)
 9. [Permissions](permissions.md)
+10. [Microservices](microservices.md)
 
 ## Overview
 
@@ -24,6 +25,7 @@ Metamorphose Framework is designed to be:
 - **Runtime-agnostic**: Works with PHP-FPM, Swoole, and FrankenPHP
 - **PSR-compliant**: Follows PSR-4, PSR-7, PSR-11, and PSR-15 standards
 - **Explicit**: No hidden magic, all code is explicit and readable
+- **Microservices-ready**: Easily extract modules to separate microservices
 
 ## Key Features
 
@@ -36,6 +38,7 @@ Metamorphose Framework is designed to be:
 - Built-in CLI for module creation and migrations
 - No global mutable state
 - Compatible with persistent runtimes
+- **Microservices support**: Run modules as separate services
 
 ## Requirements
 
@@ -69,4 +72,5 @@ Each section of the documentation covers a specific aspect of the framework:
 - **Database**: Database connections and migrations
 - **Logging**: Configuring and using the logging system
 - **Permissions**: Implementing permission checks
+- **Microservices**: Extracting modules to separate microservices
 
