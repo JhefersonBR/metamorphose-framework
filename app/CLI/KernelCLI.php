@@ -4,6 +4,7 @@ namespace Metamorphose\CLI;
 
 use Metamorphose\CLI\Commands\MigrateCommand;
 use Metamorphose\CLI\Commands\ModuleMakeCommand;
+use Metamorphose\CLI\Commands\ModuleRemoveCommand;
 
 /**
  * Kernel CLI
@@ -22,6 +23,7 @@ class KernelCLI
     private function registerDefaultCommands(): void
     {
         $this->register(new ModuleMakeCommand());
+        $this->register(new ModuleRemoveCommand());
         $this->register(new MigrateCommand());
     }
 
